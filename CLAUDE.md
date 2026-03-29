@@ -3,7 +3,7 @@
 ## What is this
 
 A CLI Python health assistant that:
-1. Receives Apple Watch data via Apple Shortcuts → POST JSON → local FastAPI server → SQLite
+1. Receives Apple Watch data via Apple Shortcuts → POST JSON → local FastAPI server → PostgreSQL
 2. Uses Mistral LLM with health context for conversational analysis
 3. Supports voice interaction via Voxtral STT/TTS with streaming playback
 4. Displays health data + waveform viz in terminal (Mistral orange aesthetic)
@@ -11,7 +11,7 @@ A CLI Python health assistant that:
 ## Architecture
 
 ```
-iPhone Shortcut (HealthKit) → POST /health → health_server.py → SQLite (health_store.py)
+iPhone Shortcut (HealthKit) → POST /health → health_server.py → PostgreSQL (health_store.py)
                                                                       ↓
 CLI: audio.py → voxtral.py (STT) → brain.py (LLM + health ctx) → voxtral.py (TTS) → viz.py
                                                                       ↓
@@ -29,7 +29,7 @@ vital/
 ├── brain.py         # System prompt, health context, LLM streaming
 ├── viz.py           # Terminal waveforms, health banner
 ├── health_server.py # FastAPI endpoint for Apple Shortcuts
-└── health_store.py  # SQLite storage and queries
+└── health_store.py  # PostgreSQL storage and queries
 tests/
 ```
 
@@ -43,7 +43,7 @@ tests/
 | `brain` | brain.py, system prompt, LLM |
 | `viz` | viz.py, terminal UI |
 | `server` | health_server.py, API endpoints |
-| `store` | health_store.py, SQLite |
+| `store` | health_store.py, PostgreSQL |
 | `config` | config.py, env vars |
 | `cli` | main.py, arg parsing |
 
@@ -51,13 +51,13 @@ tests/
 
 ```bash
 # Run the CLI (voice mode)
-uv run python -m vital.main
+uv run vital
 
 # Run the CLI (text mode)
-uv run python -m vital.main --text
+uv run vital --text
 
 # Run the health data server
-uv run python -m vital.health_server
+uv run vital-server
 
 # Run tests
 uv run pytest
