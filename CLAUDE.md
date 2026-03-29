@@ -66,6 +66,18 @@ uv run pytest
 uv run ruff check vital/
 ```
 
+## Commit authorship
+
+Author is always `spideystreet <dhicham.pro@gmail.com>` unless Claude orchestrated Vibe autonomously in background.
+
+| Scenario | git `--author` | Co-Authored-By |
+|----------|----------------|----------------|
+| User codes alone | spideystreet | none |
+| Claude codes directly | spideystreet | `claude-code <noreply@anthropic.com>` |
+| User delegates to Vibe | spideystreet | `Mistral Vibe <vibe@mistral.ai>` |
+| Claude orchestrates Vibe (background) | `Mistral Vibe <vibe@mistral.ai>` | `claude-code <noreply@anthropic.com>` |
+| Mixed (Claude + Vibe both write code) | spideystreet | both co-authors |
+
 ## Key constraints
 
 - **No medical diagnosis** — the LLM must ALWAYS recommend a professional for medical concerns
