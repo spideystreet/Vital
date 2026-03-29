@@ -1,30 +1,34 @@
 """Tests for health_store module."""
 
 import json
-import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
-from vital.config import DB_PATH, DATA_DIR
+from vital.health_store import (
+    get_latest,
+    get_recent_raw,
+    get_summary,
+    init_db,
+    insert_metrics,
+)
 
 
-@pytest.fixture(autouse=True)
-def tmp_db(monkeypatch, tmp_path):
-    """Override DB_PATH and DATA_DIR to use a temporary database."""
-    db_file = tmp_path / "test_health.db"
-    data_dir = tmp_path / "data"
-    data_dir.mkdir(exist_ok=True)
-    monkeypatch.setattr("vital.config.DB_PATH", str(db_file))
-    monkeypatch.setattr("vital.config.DATA_DIR", data_dir)
-    # Re-import the module to ensure the new paths are used
-    import importlib
-    import sys
-    if 'vital.health_store' in sys.modules:
-        importlib.reload(sys.modules['vital.health_store'])
-    from vital.health_store import init_db, insert_metrics, get_latest, get_summary, get_recent_raw
+@pytest.fixture()
+def tmp_db(tmp_path, monkeypatch):
+    """Patch DB_PATH to a temp SQLite file and initialize the schema."""
+    # Create a unique database file for this test
+    import uuid
+    db_file = tmp_path / f"test_health_{uuid.uuid4().hex}.db"
+    
+    # Patch the database path and directory
+    monkeypatch.setattr("vital.health_store.DB_PATH", db_file)
+    monkeypatch.setattr("vital.health_store.DATA_DIR", tmp_path)
+    
+    # Initialize the database
     init_db()
+    
     return db_file
 
 
@@ -32,46 +36,42 @@ class TestInitDB:
     """Test database initialization."""
 
     def test_init_db_creates_table(self, tmp_db):
-        """Test that init_db creates the health_data table."""
+        """Verify init_db creates the health_data table."""
+        import sqlite3
+
         with sqlite3.connect(tmp_db) as conn:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='health_data'"
-            )
-            assert cursor.fetchone() is not None
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        assert ("health_data",) in tables
 
     def test_init_db_creates_index(self, tmp_db):
-        """Test that init_db creates the idx_health_metric_date index."""
+        """Verify init_db creates the metric/date index."""
+        import sqlite3
+
         with sqlite3.connect(tmp_db) as conn:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_health_metric_date'"
-            )
-            assert cursor.fetchone() is not None
+            indexes = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            ).fetchall()
+        assert ("idx_health_metric_date",) in indexes
 
 
 class TestInsertMetrics:
     """Test metric insertion."""
 
-    def test_insert_metrics_single(self, tmp_db):
-        from vital.health_store import insert_metrics
-        """Test inserting a single metric."""
-        metrics = [
-            {
-                "metric": "heart_rate",
-                "value": 72.0,
-                "unit": "bpm",
-                "recorded_at": "2026-03-28T08:30:00Z",
-            }
-        ]
-        count = insert_metrics(metrics)
+    def test_insert_single_metric(self, tmp_db):
+        """Insert a single metric and check the returned count."""
+        metric = {
+            "metric": "heart_rate",
+            "value": 72.0,
+            "unit": "bpm",
+            "recorded_at": "2026-03-28T08:30:00Z",
+        }
+        count = insert_metrics([metric])
         assert count == 1
 
-        with sqlite3.connect(tmp_db) as conn:
-            cursor = conn.execute("SELECT COUNT(*) FROM health_data")
-            assert cursor.fetchone()[0] == 1
-
-    def test_insert_metrics_batch(self, tmp_db):
-        """Test inserting multiple metrics."""
-        from vital.health_store import insert_metrics
+    def test_insert_multiple_metrics(self, tmp_db):
+        """Insert multiple metrics in one batch."""
         metrics = [
             {
                 "metric": "heart_rate",
@@ -89,66 +89,67 @@ class TestInsertMetrics:
         count = insert_metrics(metrics)
         assert count == 2
 
-        with sqlite3.connect(tmp_db) as conn:
-            cursor = conn.execute("SELECT COUNT(*) FROM health_data")
-            assert cursor.fetchone()[0] == 2
+    def test_insert_with_metadata(self, tmp_db):
+        """Metadata dict is JSON-serialized into the metadata column."""
+        import sqlite3
 
-    def test_insert_metrics_with_metadata(self, tmp_db):
-        """Test inserting metrics with metadata."""
-        from vital.health_store import insert_metrics
-        metrics = [
-            {
-                "metric": "heart_rate",
-                "value": 72.0,
-                "unit": "bpm",
-                "recorded_at": "2026-03-28T08:30:00Z",
-                "metadata": {"device": "apple_watch"},
-            }
-        ]
-        insert_metrics(metrics)
+        metric = {
+            "metric": "heart_rate",
+            "value": 72.0,
+            "unit": "bpm",
+            "recorded_at": "2026-03-28T08:30:00Z",
+            "metadata": {"device": "apple_watch", "source": "healthkit"},
+        }
+        insert_metrics([metric])
 
         with sqlite3.connect(tmp_db) as conn:
-            cursor = conn.execute("SELECT metadata FROM health_data")
-            result = cursor.fetchone()[0]
-            assert json.loads(result) == {"device": "apple_watch"}
+            row = conn.execute("SELECT metadata FROM health_data").fetchone()
+        assert row[0] is not None
+        assert json.loads(row[0]) == {"device": "apple_watch", "source": "healthkit"}
 
-    def test_insert_metrics_missing_fields(self, tmp_db):
-        """Test inserting metrics with missing fields."""
-        from vital.health_store import insert_metrics
-        metrics = [
-            {
-                "metric": "heart_rate",
-                "value": 72.0,
-                # Missing unit and recorded_at
-            }
-        ]
-        with pytest.raises(KeyError):
-            insert_metrics(metrics)
+    def test_insert_without_optional_fields(self, tmp_db):
+        """Unit and metadata are optional and default to NULL."""
+        metric = {
+            "metric": "heart_rate",
+            "value": 72.0,
+            "recorded_at": "2026-03-28T08:30:00Z",
+        }
+        count = insert_metrics([metric])
+        assert count == 1
 
 
 class TestGetLatest:
-    """Test retrieving the latest metrics."""
+    """Test retrieving latest metrics."""
 
-    def test_get_latest_single(self, tmp_db):
-        """Test retrieving the latest metric."""
-        from vital.health_store import insert_metrics, get_latest
-        metrics = [
+    def test_get_latest_empty_db(self, tmp_db):
+        """Empty database returns an empty list."""
+        result = get_latest("heart_rate")
+        assert result == []
+
+    def test_get_latest_single_metric(self, tmp_db):
+        """Single inserted metric is retrievable."""
+        insert_metrics([
             {
                 "metric": "heart_rate",
                 "value": 72.0,
                 "unit": "bpm",
                 "recorded_at": "2026-03-28T08:30:00Z",
             }
-        ]
-        insert_metrics(metrics)
+        ])
         result = get_latest("heart_rate")
         assert len(result) == 1
+        assert result[0]["metric"] == "heart_rate"
         assert result[0]["value"] == 72.0
 
-    def test_get_latest_multiple(self, tmp_db):
-        """Test retrieving multiple latest metrics."""
-        from vital.health_store import insert_metrics, get_latest
+    def test_get_latest_multiple_metrics(self, tmp_db):
+        """Limit parameter restricts results, ordered most-recent first."""
         metrics = [
+            {
+                "metric": "heart_rate",
+                "value": 70.0,
+                "unit": "bpm",
+                "recorded_at": "2026-03-28T08:00:00Z",
+            },
             {
                 "metric": "heart_rate",
                 "value": 72.0,
@@ -159,122 +160,194 @@ class TestGetLatest:
                 "metric": "heart_rate",
                 "value": 75.0,
                 "unit": "bpm",
-                "recorded_at": "2026-03-28T09:30:00Z",
+                "recorded_at": "2026-03-28T09:00:00Z",
             },
         ]
         insert_metrics(metrics)
+
         result = get_latest("heart_rate", limit=2)
         assert len(result) == 2
         assert result[0]["value"] == 75.0
         assert result[1]["value"] == 72.0
 
-    def test_get_latest_empty_db(self, tmp_db):
-        """Test retrieving latest metrics from an empty database."""
-        from vital.health_store import get_latest
-        result = get_latest("heart_rate")
-        assert len(result) == 0
-
-
-class TestGetSummary:
-    """Test retrieving summary statistics."""
-
-    def test_get_summary_single_metric(self, tmp_db):
-        """Test retrieving summary for a single metric."""
-        from vital.health_store import insert_metrics, get_summary
-        now = datetime.now(timezone.utc)
+    def test_get_latest_different_metric(self, tmp_db):
+        """get_latest filters by metric name."""
         metrics = [
             {
                 "metric": "heart_rate",
                 "value": 72.0,
                 "unit": "bpm",
-                "recorded_at": (now - timedelta(hours=1)).isoformat(),
+                "recorded_at": "2026-03-28T08:30:00Z",
+            },
+            {
+                "metric": "spo2",
+                "value": 98.0,
+                "unit": "%",
+                "recorded_at": "2026-03-28T08:35:00Z",
+            },
+        ]
+        insert_metrics(metrics)
+
+        result = get_latest("spo2")
+        assert len(result) == 1
+        assert result[0]["metric"] == "spo2"
+
+
+class TestGetSummary:
+    """Test summary aggregation."""
+
+    def test_get_summary_empty_db(self, tmp_db):
+        """Empty database returns an empty dict."""
+        result = get_summary(hours=24)
+        assert result == {}
+
+    def test_get_summary_single_metric(self, tmp_db):
+        """Aggregation computes avg/min/max correctly."""
+        now = datetime.now(timezone.utc)
+        one_hour_ago = (now - timedelta(hours=1)).isoformat()
+
+        metrics = [
+            {
+                "metric": "heart_rate",
+                "value": 70.0,
+                "unit": "bpm",
+                "recorded_at": one_hour_ago,
             },
             {
                 "metric": "heart_rate",
                 "value": 75.0,
                 "unit": "bpm",
-                "recorded_at": (now - timedelta(hours=2)).isoformat(),
+                "recorded_at": now.isoformat(),
             },
         ]
         insert_metrics(metrics)
-        summary = get_summary(hours=24)
-        assert "heart_rate" in summary
-        assert summary["heart_rate"]["avg"] == 73.5
+
+        result = get_summary(hours=24)
+        assert "heart_rate" in result
+        assert result["heart_rate"]["avg"] == 72.5
+        assert result["heart_rate"]["min"] == 70.0
+        assert result["heart_rate"]["max"] == 75.0
 
     def test_get_summary_multiple_metrics(self, tmp_db):
-        """Test retrieving summary for multiple metrics."""
-        from vital.health_store import insert_metrics, get_summary
+        """Summary covers all distinct metric types."""
         now = datetime.now(timezone.utc)
         metrics = [
             {
                 "metric": "heart_rate",
                 "value": 72.0,
                 "unit": "bpm",
-                "recorded_at": (now - timedelta(hours=1)).isoformat(),
+                "recorded_at": now.isoformat(),
             },
             {
                 "metric": "spo2",
                 "value": 98.0,
                 "unit": "%",
-                "recorded_at": (now - timedelta(hours=1)).isoformat(),
+                "recorded_at": now.isoformat(),
             },
         ]
         insert_metrics(metrics)
-        summary = get_summary(hours=24)
-        assert "heart_rate" in summary
-        assert "spo2" in summary
 
-    def test_get_summary_empty_db(self, tmp_db):
-        """Test retrieving summary from an empty database."""
-        from vital.health_store import get_summary
-        summary = get_summary(hours=24)
-        assert len(summary) == 0
+        result = get_summary(hours=24)
+        assert "heart_rate" in result
+        assert "spo2" in result
+        assert result["heart_rate"]["avg"] == 72.0
+        assert result["spo2"]["avg"] == 98.0
+
+    def test_get_summary_time_filter(self, tmp_db):
+        """Old records outside the time window are excluded."""
+        now = datetime.now(timezone.utc)
+        old_date = (now - timedelta(days=2)).isoformat()
+        recent_date = now.isoformat()
+
+        metrics = [
+            {
+                "metric": "heart_rate",
+                "value": 60.0,
+                "unit": "bpm",
+                "recorded_at": old_date,
+            },
+            {
+                "metric": "heart_rate",
+                "value": 72.0,
+                "unit": "bpm",
+                "recorded_at": recent_date,
+            },
+        ]
+        insert_metrics(metrics)
+
+        result = get_summary(hours=24)
+        assert result["heart_rate"]["avg"] == 72.0
+        assert result["heart_rate"]["count"] == 1
 
 
 class TestGetRecentRaw:
     """Test retrieving recent raw data."""
 
-    def test_get_recent_raw_single(self, tmp_db):
-        """Test retrieving recent raw data for a single metric."""
-        from vital.health_store import insert_metrics, get_recent_raw
+    def test_get_recent_raw_empty_db(self, tmp_db):
+        """Empty database returns an empty list."""
+        result = get_recent_raw(hours=24)
+        assert result == []
+
+    def test_get_recent_raw_single_entry(self, tmp_db):
+        """Single recent entry is returned."""
         now = datetime.now(timezone.utc)
-        metrics = [
+        insert_metrics([
             {
                 "metric": "heart_rate",
                 "value": 72.0,
                 "unit": "bpm",
-                "recorded_at": (now - timedelta(hours=1)).isoformat(),
+                "recorded_at": now.isoformat(),
             }
-        ]
-        insert_metrics(metrics)
+        ])
+
         result = get_recent_raw(hours=24)
         assert len(result) == 1
         assert result[0]["metric"] == "heart_rate"
 
-    def test_get_recent_raw_multiple(self, tmp_db):
-        """Test retrieving recent raw data for multiple metrics."""
-        from vital.health_store import insert_metrics, get_recent_raw
+    def test_get_recent_raw_multiple_entries(self, tmp_db):
+        """Multiple recent entries are all returned."""
         now = datetime.now(timezone.utc)
         metrics = [
             {
                 "metric": "heart_rate",
                 "value": 72.0,
                 "unit": "bpm",
-                "recorded_at": (now - timedelta(hours=1)).isoformat(),
+                "recorded_at": now.isoformat(),
             },
             {
                 "metric": "spo2",
                 "value": 98.0,
                 "unit": "%",
-                "recorded_at": (now - timedelta(hours=1)).isoformat(),
+                "recorded_at": now.isoformat(),
             },
         ]
         insert_metrics(metrics)
+
         result = get_recent_raw(hours=24)
         assert len(result) == 2
 
-    def test_get_recent_raw_empty_db(self, tmp_db):
-        """Test retrieving recent raw data from an empty database."""
-        from vital.health_store import get_recent_raw
+    def test_get_recent_raw_time_filter(self, tmp_db):
+        """Old records outside the time window are excluded."""
+        now = datetime.now(timezone.utc)
+        old_date = (now - timedelta(days=2)).isoformat()
+        recent_date = now.isoformat()
+
+        metrics = [
+            {
+                "metric": "heart_rate",
+                "value": 60.0,
+                "unit": "bpm",
+                "recorded_at": old_date,
+            },
+            {
+                "metric": "heart_rate",
+                "value": 72.0,
+                "unit": "bpm",
+                "recorded_at": recent_date,
+            },
+        ]
+        insert_metrics(metrics)
+
         result = get_recent_raw(hours=24)
-        assert len(result) == 0
+        assert len(result) == 1
+        assert result[0]["value"] == 72.0

@@ -134,29 +134,7 @@ Each item is a dictionary:
 
 For each Find Health Samples result, use **Repeat with Each** to add entries.
 
-**Simplified approach** — if building nested JSON in Shortcuts is painful,
-use a **Text** action with the JSON template instead:
-
-| Action | Config |
-|--------|--------|
-| **Text** | See template below |
-
-```
-{
-  "metrics": [
-    {"metric": "heart_rate", "value": [Heart Rate Value], "unit": "bpm", "recorded_at": "[Heart Rate Start Date]"},
-    {"metric": "resting_heart_rate", "value": [Resting HR Value], "unit": "bpm", "recorded_at": "[Resting HR Start Date]"},
-    {"metric": "spo2", "value": [Blood Oxygen Value], "unit": "%", "recorded_at": "[Blood Oxygen Start Date]"},
-    {"metric": "steps", "value": [Steps Value], "unit": "count", "recorded_at": "[Steps Start Date]"},
-    {"metric": "calories", "value": [Active Energy Value], "unit": "kcal", "recorded_at": "[Active Energy Start Date]"},
-    {"metric": "hrv", "value": [HRV Value], "unit": "ms", "recorded_at": "[HRV Start Date]"},
-    {"metric": "sleep", "value": [Sleep Value], "unit": "hours", "recorded_at": "[Sleep Start Date]"}
-  ]
-}
-```
-
-> Replace `[brackets]` with the Magic Variables from each Find Health Samples.
-> For dates, use the **Format Date** action → ISO 8601 format.
+> Use the **Dictionary** action to build the JSON structure. Avoid using the **Text** action for JSON construction, as it can lead to formatting issues.
 
 ---
 
@@ -213,9 +191,18 @@ Recommended: run every morning + every evening for good coverage.
 
 ---
 
+## iOS Health Permissions Setup
+
+Before running the shortcut, ensure that the Shortcuts app has permission to access Health data:
+
+1. Open the **Health** app on your iPhone.
+2. Tap your profile picture → **Apps** → **Shortcuts**.
+3. Enable all relevant permissions (Heart Rate, Blood Oxygen, Steps, etc.).
+
 ## Troubleshooting
 
 - **"Could not connect"** → check that the server is running and both devices are on the same Wi-Fi
 - **"Request timeout"** → check your Mac's firewall settings (System Settings → Firewall → allow Python)
 - **No data found** → make sure your Apple Watch has synced recent data to iPhone (open Health app first)
 - **Test with ping** → try `http://<YOUR_MAC_IP>:8420/health/ping` in Safari first
+- **"Action trying to share N items" error** → This occurs when the shortcut tries to process multiple items incorrectly. Ensure that each **Find Health Samples** action is followed by a **Repeat with Each** action to handle the list of samples correctly.
