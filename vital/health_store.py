@@ -1,7 +1,7 @@
 """PostgreSQL storage for Apple Watch health data."""
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import psycopg
 from psycopg.rows import dict_row
@@ -68,9 +68,7 @@ def init_db() -> None:
 
 def _resolve_metric_id(cur, metric_name: str) -> int:
     """Get metric_id from name, raising ValueError if unknown."""
-    row = cur.execute(
-        "SELECT id FROM metric_catalog WHERE name = %s", (metric_name,)
-    ).fetchone()
+    row = cur.execute("SELECT id FROM metric_catalog WHERE name = %s", (metric_name,)).fetchone()
     if row is None:
         raise ValueError(f"Unknown metric: {metric_name!r}. Register it in metric_catalog first.")
     return row["id"]
@@ -85,14 +83,16 @@ def insert_metrics(metrics: list[dict]) -> int:
             rows = []
             for m in metrics:
                 metric_id = _resolve_metric_id(cur, m["metric"])
-                rows.append((
-                    m["recorded_at"],
-                    metric_id,
-                    m["value"],
-                    m.get("value_end"),
-                    m.get("source"),
-                    json.dumps(m["metadata"]) if m.get("metadata") else None,
-                ))
+                rows.append(
+                    (
+                        m["recorded_at"],
+                        metric_id,
+                        m["value"],
+                        m.get("value_end"),
+                        m.get("source"),
+                        json.dumps(m["metadata"]) if m.get("metadata") else None,
+                    )
+                )
             cur.executemany(
                 "INSERT INTO health_data "
                 "(recorded_at, metric_id, value, value_end, source, metadata) "
@@ -121,7 +121,7 @@ def get_latest(metric: str, limit: int = 1) -> list[dict]:
 
 def get_summary(hours: int = 24) -> dict:
     """Get aggregated summary of all metrics over the last N hours."""
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    since = datetime.now(UTC) - timedelta(hours=hours)
     with _connect() as conn:
         rows = conn.execute(
             """
@@ -155,7 +155,7 @@ def get_summary(hours: int = 24) -> dict:
 
 def get_recent_raw(hours: int = 24) -> list[dict]:
     """Get all raw data points from the last N hours."""
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    since = datetime.now(UTC) - timedelta(hours=hours)
     with _connect() as conn:
         rows = conn.execute(
             """
