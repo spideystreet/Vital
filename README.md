@@ -39,11 +39,7 @@ Ask for something. It looks at your Apple Watch data and answers out loud. That'
 
 ## Why
 
-Millions of people wear a smartwatch. Every one of them collects heart rate, sleep, SpO2, steps — 24/7, passively. That's an insane amount of personal health data.
-
-And yet — almost nobody actually *uses* or *understand* it. You glance at a ring, check a number, swipe away. The data sits there. You don't know what a 45ms HRV means. Apps give you charts, not answers.
-
-V.I.T.A.L flips this: ask "how did I sleep?" and get an actual spoken answer grounded in *your* real data — not a generic article, not a color-coded ring. A conversation.
+Everyone wears a watch. Nobody understands the data. Apps give you charts — V.I.T.A.L gives you answers.
 
 ## Powered by
 
