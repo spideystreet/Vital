@@ -6,23 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from vital.health_server import app
-from vital.health_store import init_db, insert_metrics
+from vital.health_store import insert_metrics
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
-    """Patch DB_PATH to a temp file, initialize schema, return TestClient."""
-    # Create a unique database file for this test
-    import uuid
-    db_file = tmp_path / f"test_health_{uuid.uuid4().hex}.db"
-    
-    # Patch the database path and directory
-    monkeypatch.setattr("vital.health_store.DB_PATH", db_file)
-    monkeypatch.setattr("vital.health_store.DATA_DIR", tmp_path)
-    
-    # Initialize the database
-    init_db()
-    
+def client(test_db):
+    """Return a TestClient with a clean test database."""
     return TestClient(app)
 
 
