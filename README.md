@@ -1,6 +1,6 @@
 <p align="center">
   <img src="assets/mockups/apple-watch-ultra.png" alt="V.I.T.A.L" width="200">
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  &nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://mistral.ai"><img src="assets/mockups/alanxmistral.png" alt="Alan x Mistral" width="200"></a>
 </p>
 
