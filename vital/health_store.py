@@ -42,8 +42,14 @@ _DEFAULT_METRICS = [
     ("resting_hr", "bpm", "vitals", "Resting heart rate"),
     ("hrv", "ms", "vitals", "Heart rate variability (SDNN)"),
     ("spo2", "%", "vitals", "Blood oxygen saturation"),
+    ("respiratory_rate", "brpm", "vitals", "Respiratory rate (breaths per minute)"),
+    ("wrist_temperature", "C", "vitals", "Wrist temperature deviation from baseline"),
     ("steps", "count", "activity", "Step count"),
+    ("active_calories", "kcal", "activity", "Active energy burned"),
+    ("distance", "km", "activity", "Walking + running distance"),
     ("sleep", "hours", "sleep", "Sleep duration"),
+    ("sleep_deep", "hours", "sleep", "Deep sleep duration"),
+    ("sleep_rem", "hours", "sleep", "REM sleep duration"),
 ]
 
 
@@ -80,13 +86,25 @@ def insert_metrics(metrics: list[dict]) -> int:
         return 0
     with _connect() as conn:
         with conn.cursor() as cur:
+            # Batch-resolve all metric IDs in one query to avoid N+1
+            unique_names = list({m["metric"] for m in metrics})
+            catalog_rows = cur.execute(
+                "SELECT name, id FROM metric_catalog WHERE name = ANY(%s)",
+                (unique_names,),
+            ).fetchall()
+            id_map = {r["name"]: r["id"] for r in catalog_rows}
+            missing = set(unique_names) - set(id_map)
+            if missing:
+                raise ValueError(
+                    f"Unknown metric(s): {missing!r}. Register in metric_catalog first."
+                )
+
             rows = []
             for m in metrics:
-                metric_id = _resolve_metric_id(cur, m["metric"])
                 rows.append(
                     (
                         m["recorded_at"],
-                        metric_id,
+                        id_map[m["metric"]],
                         m["value"],
                         m.get("value_end"),
                         m.get("source"),
@@ -130,18 +148,19 @@ def get_summary(hours: int = 24) -> dict:
                    ROUND(AVG(d.value)::numeric, 1) as avg,
                    ROUND(MIN(d.value)::numeric, 1) as min,
                    ROUND(MAX(d.value)::numeric, 1) as max,
-                   ROUND((ARRAY_AGG(d.value ORDER BY d.recorded_at DESC))[1]::numeric, 1) as latest
+                   ROUND((SELECT d2.value FROM health_data d2
+                          WHERE d2.metric_id = c.id AND d2.recorded_at >= %s
+                          ORDER BY d2.recorded_at DESC LIMIT 1)::numeric, 1) as latest
             FROM health_data d
             JOIN metric_catalog c ON c.id = d.metric_id
             WHERE d.recorded_at >= %s
-            GROUP BY c.name, c.unit
+            GROUP BY c.id, c.name, c.unit
             ORDER BY c.name
             """,
-            (since,),
+            (since, since),
         ).fetchall()
     return {
         row["metric"]: {
-            "metric": row["metric"],
             "unit": row["unit"],
             "count": row["count"],
             "avg": float(row["avg"]),

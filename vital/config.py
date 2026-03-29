@@ -23,6 +23,10 @@ MAX_RECORD_SECONDS = 30
 AUDIO_OUTPUT_DEVICE = os.environ.get("AUDIO_OUTPUT_DEVICE")
 TTS_VOICE_ID = os.environ.get("TTS_VOICE_ID", "")
 
+# --- Demo voice IDs (Voxtral French) ---
+DEMO_USER_VOICE = "e0580ce5-e63c-4cbe-88c8-a983b80c5f1f"  # Marie - Curious
+DEMO_ASSISTANT_VOICE = "5a271406-039d-46fe-835b-fbbb00eaf08d"  # Marie - Neutral
+
 # --- Health Server ---
 HEALTH_SERVER_HOST = os.environ.get("VITAL_HOST", "0.0.0.0")
 HEALTH_SERVER_PORT = int(os.environ.get("VITAL_PORT", "8420"))

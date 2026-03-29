@@ -2,6 +2,7 @@
 
 import psycopg
 import pytest
+from psycopg import sql
 
 from vital.config import DATABASE_URL
 
@@ -10,28 +11,28 @@ from vital.config import DATABASE_URL
 def test_db(monkeypatch):
     """Create a clean test schema, run the test, then tear down."""
     schema = f"test_{id(monkeypatch):x}"
-    monkeypatch.setattr("vital.health_store.DATABASE_URL", DATABASE_URL)
+    schema_id = sql.Identifier(schema)
 
     with psycopg.connect(DATABASE_URL) as conn:
-        conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
-        conn.execute(f"CREATE SCHEMA {schema}")
-        conn.execute(f"SET search_path TO {schema}")
+        conn.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(schema_id))
+        conn.execute(sql.SQL("CREATE SCHEMA {}").format(schema_id))
 
     # Patch _connect to always use the test schema
-    original_connect = psycopg.connect
+    from vital.health_store import _connect as original_connect
 
-    def _patched_connect(conninfo, **kwargs):
-        c = original_connect(conninfo, **kwargs)
-        c.execute(f"SET search_path TO {schema}")
+    def _patched_connect(**kwargs):
+        c = original_connect(**kwargs)
+        c.execute(sql.SQL("SET search_path TO {}").format(schema_id))
         return c
 
-    monkeypatch.setattr("psycopg.connect", _patched_connect)
+    monkeypatch.setattr("vital.health_store._connect", _patched_connect)
 
     from vital.health_store import init_db
+
     init_db()
 
     yield schema
 
     monkeypatch.undo()
     with psycopg.connect(DATABASE_URL) as conn:
-        conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+        conn.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(schema_id))

@@ -1,6 +1,6 @@
 """Tests for health_server API."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -83,7 +83,7 @@ class TestHealthSummaryEndpoint:
 
     def test_summary_with_data(self, client):
         """Summary returns aggregated stats for inserted data."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         metrics = [
             {
                 "metric": "heart_rate",
@@ -110,7 +110,7 @@ class TestHealthSummaryEndpoint:
 
     def test_summary_with_time_parameter(self, client):
         """Time parameter filters out old records."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         old_date = (now - timedelta(days=2)).isoformat()
         recent_date = now.isoformat()
 
