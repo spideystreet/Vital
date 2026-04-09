@@ -1,7 +1,7 @@
 ---
 title: Competitor Landscape – HRV & Stress Apps
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-09
 type: comparison
 tags: [competitors, market]
 sources:
@@ -11,11 +11,12 @@ sources:
   - competitor_stress_watch_ai.md
   - competitor_stressface_hrv.md
   - bevel.md
+  - raw/articles/03_france_market.md
 ---
 
 # Competitor Landscape – HRV & Stress Apps
 
-## Summary
+## US Wearable / Stress Apps
 
 | Competitor | Focus | HRV | Sleep | Stress Score | AI Coach | Burnout Focus | B2B |
 |------------|-------|-----|-------|--------------|----------|---------------|-----|
@@ -25,71 +26,36 @@ sources:
 | **Stress Watch AI** | 24/7 stress tracking | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **StressFace** | Real-time stress | ✅ | ❌ | ✅ (1–10) | ❌ | ❌ | ❌ |
 | **Bevel** | Sport + recovery | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **V.I.T.A.L** | **Burnout at work** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (Alan) |
 
-## Key Competitors
+**Key gaps:** None target burnout at work specifically. None use voice. None have insurer distribution.
 
-### Elite HRV
-- **Positioning:** Long-established HRV-based wellness/recovery app
-- **Features:** HRV metrics, autonomic nervous system gauges, guided breathing, recovery protocols
-- **Target:** Athletes and high performers
-- **Gap vs V.I.T.A.L:** No burnout focus, no AI coach, no workplace context
+## France Market Competitors
 
-### HRV Heart & Stress Monitor (MWM)
-- **Positioning:** "Professional health lab" for iPhone + Apple Watch
-- **Features:** Daily readiness & burnout prevention score, HR/HRV/blood pressure/sleep/workout analysis
-- **Gap vs V.I.T.A.L:**
-  - V.I.T.A.L is **voice-first**, not dashboard-only
-  - V.I.T.A.L rooted in **insurer/workplace context (Alan)**
-  - V.I.T.A.L = **weekly workplace check-ups**, not generic "readiness"
-
-### RelaxWatch
-- **Positioning:** Professional stress companion for Apple Watch
-- **Features:** Continuous HRV monitoring, smart alerts, sleep analysis, personalized plans
-- **Gap vs V.I.T.A.L:**
-  - No burnout at work framing
-  - No voice-based coach
-  - No Alan/occupational health integration
-
-### Stress Watch AI
-- **Positioning:** 24/7 personal stress tracker + AI stress coach
-- **Features:** HRV + resting HR from Apple Health, instant notifications, personalized insights, Daily Recovery Score (0–100)
-- **Gap vs V.I.T.A.L:**
-  - Generic stress vs **burnout at work**
-  - No weekly voice-based check-ups
-  - No Alan ecosystem integration
-
-### StressFace
-- **Positioning:** Apple Watch HRV stress tracker
-- **Features:** 1–10 stress score in real time, guided meditations, breathing exercises
-- **Gap vs V.I.T.A.L:**
-  - Simple score vs comprehensive burnout assessment
-  - No weekly ritual
-  - No workplace framing
-
-### Bevel
-- **Positioning:** AI-powered health and sport coach
-- **Features:** Multi-source data centralization, AI coach with memory, personalized recommendations
-- **Gap vs V.I.T.A.L:**
-  - Sport/physical recovery vs **stress/mental health/burnout**
-  - No voice dimension
-  - Standalone app vs **health insurance ecosystem (Alan)**
+| Solution | Type | Weakness vs V.I.T.A.L |
+|---|---|---|
+| **Moodwork** | B2B survey-based | No biometric data, no personalization |
+| **Gymlib** | B2B wellness | Physical only, no mental health tracking |
+| **Alan (insurance app)** | Health insurer | No proactive burnout biomarker monitoring |
+| **Withings/Garmin apps** | Fitness wearables | No burnout-specific AI or weekly check-in |
+| **Teleconsultation psych** | Reactive care | Post-burnout, not preventive |
 
 ## V.I.T.A.L Differentiators
 
-1. **Explicit [[burnout]] at work focus** (not generic stress)
-2. **[[weekly-vocal-checkup]]** and rituals
-3. **Integration with [[alan]] ecosystem** and occupational health actors
-4. **[[hrv]] + [[sleep]] + [[voice-biomarkers]]** (multi-signal approach)
-5. **B2B2C model** via [[alan]] (37,000 companies, 1M+ members)
+1. **Explicit burnout-at-work focus** (not generic stress) — see [[burnout]]
+2. **Weekly vocal check-up** — see [[weekly-vocal-checkup]]
+3. **Alan ecosystem integration** — see [[alan]] (37,000 companies, 1M+ members)
+4. **Multi-signal**: HRV + sleep + voice — see [[healthkit-metrics]], [[voice-biomarkers]]
+5. **B2B2C model via Alan**
 6. **Proactive detection** vs reactive dashboard
 
-## Market Opportunity
+## Clinical Proof Gap
 
-- **Wearable-based burnout detection is feasible but early-stage** (ScienceDirect review)
-- Most studies: small sample sizes, limited external validation
-- **Strong need for larger cohorts and better algorithms** → V.I.T.A.L opportunity
+- Wearable-based burnout detection is **feasible but early-stage** (PMC 2024)
+- Most studies: small samples, limited external validation
+- **Strong need for longitudinal cohorts** → V.I.T.A.L opportunity
+- JAMA RCT (Mayo Clinic, 2025): **54% burnout risk reduction** with smartwatch awareness alone
+- V.I.T.A.L adds: structured check-ins, AI synthesis, Alan distribution → should outperform
 
 ---
-**Status:** Ingested  
+**Status:** Updated with France market
 **Confidence:** High

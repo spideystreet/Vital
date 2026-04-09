@@ -48,26 +48,31 @@
 - hrv.md — Stress/resilience biomarker (scientific validation)
 - sleep.md — Duration-burnout link (17x odds <7h)
 - voice-biomarkers.md — Voxtral TTS, voice-first approach
-- gamification.md — TEMPLATE (to fill)
-- weekly-vocal-checkup.md — TEMPLATE (to fill)
+- weekly-vocal-checkup.md — Weekly checkup ritual
+- rgpd.md — GDPR compliance strategy
 
-**Comparisons (1):**
-- competitors.md — 6 HRV/stress apps analyzed
+## 2026-04-09 ingestion | 5 new raw files processed
 
-### Key Insights
+### Raw Files Added: 5
+- raw/articles/03_france_market.md — French market opportunity (new stats, segments, B2B ROI)
+- raw/articles/04_vital_app_design.md — Full product design, risk tiers, Voxtral prompts, JAMA RCT proof
+- raw/assets/02_healthkit_metrics.md — 20 HealthKit metrics ranked, device accuracy table
+- raw/assets/05_scientific_references.md — 17 open-access references with links
+- raw/papers/01_burnout_physiology.md — HPA/SAM axes physiology, burnout cascade
 
-1. **Alan Gap:** No HealthKit integration → V.I.T.A.L can read real biometrics
-2. **Burnout Scale:** 2.5M people in France, €2-3B/year cost
-3. **HRV Validated:** Strong scientific backing for stress/burnout detection
-4. **Sleep Critical:** <7h = 17x higher burnout odds (healthcare workers)
-5. **Competitor Gap:** No burnout-at-work focus, no voice-first, no insurer integration
+### Pages Updated: 6
+- burnout.md — Added full physiology (HPA/SAM), BROWNIE study, cascade diagram, economic ROI
+- sleep.md — Added deep sleep/REM roles, HPA recovery, HealthKit keys, device accuracy
+- weekly-vocal-checkup.md — Added MBI 3-dimension structure, risk tiers, Voxtral prompt, engagement strategy
+- voice-biomarkers.md — Added prosodic features as stress markers, dual-signal function
+- competitors.md — Added France market competitors table, clinical proof gap
+- rgpd.md — Added to wiki (already existed)
 
-### Next Steps
+### Pages Created: 5
+- burnout-physiology.md — Full HPA/SAM physiology reference, biomarkers table, evidence gap
+- france-market.md — Market opportunity, segments, B2B ROI, privacy framework
+- healthkit-metrics.md — All 20 metrics ranked by clinical relevance, device accuracy, personal baseline principle
+- vital-app-design.md — Full app architecture, risk tiers, model approach, clinical proof
+- scientific-references.md — 17 categorized open-access papers with full citations and links
 
-1. Fill gamification.md template with Alan Play insights
-2. Fill weekly-vocal-checkup.md template with user flow
-3. Create queries/ for specific research questions
-4. Add more raw files as needed
-
----
-**Last updated:** 2026-04-07
+## 2026-04-09 ingestion | Batch complete. Total: 14 wiki pages.

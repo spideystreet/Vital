@@ -1,46 +1,53 @@
 ---
 title: Voice Biomarkers
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-09
 type: concept
-tags: [voice, biomarker, mistral]
+tags: [voice-biomarker, biomarker, mistral, voxtral]
 sources:
   - voxtral_tts.md
+  - raw/articles/04_vital_app_design.md
 ---
 
 # Voice Biomarkers
 
 ## Voxtral TTS
 
-- Neural TTS model in Mistral / Voxtral ecosystem
-- arXiv paper: 2603.25551
+- Neural TTS model in Mistral ecosystem
+- arXiv: 2603.25551
 - **TTS choice for V.I.T.A.L agent voice response**
 
-### Key Questions (from paper)
-- Model architecture (encoder/decoder, sampling strategy)
-- End-to-end audio generation latency
-- Voice quality: naturalness, expressiveness, French language support
-- Deployment modes: API, on-prem, edge, streaming chunks?
-- Comparison vs ElevenLabs, Coqui, OpenAI TTS
+### Key Properties
+- End-to-end audio generation (architecture details in paper)
+- French language support crucial for [[alan]] market
+- Consistency: 100% [[mistral]] stack (LLM + TTS)
 
-## V.I.T.A.L Voice-First Approach
+## Voice as Diagnostic Medium for Burnout
 
-### Why Voice?
-1. **Natural interaction** for [[weekly-vocal-checkup]]
-2. **Voice biomarkers** (potential future): stress, fatigue detectable in speech patterns
-3. **Consistency:** 100% [[mistral]] stack (LLM + TTS)
-4. **Native French support** essential for [[alan]] market
+### Why Voice Works
+1. **Reduced friction:** Speaking is faster than typing — critical for fatigued users
+2. **Richer signal:** Prosodic features (speech rate, pause duration, vocal tone) are validated stress markers in NLP research — Voxtral can extract these beyond text content
+3. **Clinical parallel:** Structured clinical interviews are the gold standard for burnout assessment (MBI is interviewer-administered in clinical settings)
+4. **Dual function:** Voice provides both subjective answers (what user says) AND objective biomarkers (how user says it)
 
-### Critical Requirements
-- **Latency <500ms** for real-time UX
-- High naturalness and expressiveness
-- French language quality
+### Prosodic Features as Stress Markers
+- **Speech rate:** Slower speech = fatigue proxy
+- **Pause duration:** Longer pauses = cognitive load / exhaustion
+- **Vocal tone:** Flat affect = cynicism/depersonalization marker
+- **Pitch variance:** Reduced range = emotional exhaustion
 
-## Unknown / To Confirm
-- Is end-to-end latency compatible with real-time UX (<500ms)?
-- Is Voxtral TTS available via standard Mistral API today?
-- Is there an audio streaming mode to reduce perceived latency?
+### V.I.T.A.L Use
+- Weekly check-up via Voxtral (see [[weekly-vocal-checkup]])
+- 2-3 minute structured interview covering MBI 3 dimensions
+- Voice data processed → structured JSON scores (audio not stored)
+- Future: voice biomarkers as additional objective input to risk score
+
+## Related Pages
+- [[weekly-vocal-checkup]] — Implementation protocol
+- [[vital-app-design]] — Full app architecture
+- [[vital-app-design]] — Voxtral prompt design
+- [[vital-app-design]] — App architecture
 
 ---
-**Status:** Ingested  
+**Status:** Updated with prosodic features evidence
 **Confidence:** Medium
