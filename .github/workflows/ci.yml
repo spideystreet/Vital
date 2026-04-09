@@ -3,8 +3,24 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+      - "wiki/**"
+      - "public/**"
+      - ".github/pull_request_template.md"
+      - ".vibe/**"
+      - "LICENSE"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+      - "wiki/**"
+      - "public/**"
+      - ".github/pull_request_template.md"
+      - ".vibe/**"
+      - "LICENSE"
 
 jobs:
   lint:
