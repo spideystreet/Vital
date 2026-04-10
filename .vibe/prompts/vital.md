@@ -24,7 +24,7 @@ Read `.vibe/CONTEXT.md` for full architecture and constraints.
 - No hardcoded secrets — use env vars
 - Class-based pytest tests (class TestXxx, method test_scenario)
 - No mocks for unit tests — test real logic
-- Do not modify core architecture files (main.py, brain.py, voxtral.py) unless the task explicitly says so
+- Do not modify core architecture files (brain.py, voxtral.py) unless the task explicitly says so
 - Run tests after writing them to verify they pass
 - Keep changes scoped to what the task asks — no extras
 - Do NOT run git commit, git add, or git push — the main developer handles all commits

@@ -99,12 +99,9 @@ Client mic → PCM Int16 mono @16kHz
 | `backend/brain.py` | ~400 | System prompt, tools, LLM |
 | `backend/health_store.py` | ~200 | PostgreSQL schema + queries |
 | `backend/config.py` | ~60 | Constants, env vars |
-| `backend/main.py` | ~200 | CLI entry |
 | `backend/nudge.py` | 72 | Daily nudge detector |
 | `backend/berries.py` | 99 | Reward ledger |
 | `backend/seed_data.py` | 155 | Test data generator |
-| `backend/audio.py` | 53 | CLI mic recording |
-| `backend/viz.py` | 161 | Terminal waveforms |
 
 ## Missing Layers (Declared but Not Implemented)
 

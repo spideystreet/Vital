@@ -21,9 +21,6 @@ Backend: STT → brain.py (LLM + 6 tools) → TTS → audio response
 - `backend/health_server.py` — FastAPI receiver
 - `backend/brain.py` — LLM system prompt (stress/burnout oriented), tool use (6 tools), health context
 - `backend/voxtral.py` — STT + streaming TTS
-- `backend/audio.py` — mic recording
-- `backend/viz.py` — terminal waveforms (Rich)
-- `backend/main.py` — CLI orchestrator
 - `backend/seed_data.py` — test data generator (healthy/stressed/athlete/sleep_deprived)
 
 ## Constraints

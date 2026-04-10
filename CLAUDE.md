@@ -3,7 +3,7 @@
 ## What is this
 
 A vocal health checkup for stress and burnout prevention that:
-1. Reads health data from Apple Watch via HealthKit (20 metrics)
+1. Reads health data from wearables via Thryve API (20 metrics)
 2. Uses Mistral Small 4 LLM with 6 tools for conversational analysis
 3. Crosses subjective well-being (voice) with objective biometrics to detect burnout
 4. Runs a **weekly vocal checkup ritual** (3 structured questions × 7-day biometric trends → score + action). See `wiki/concepts/weekly-vocal-checkup.md`.
@@ -26,13 +26,10 @@ Browser (mic + UI) → frontend/ (web app)
 ## Project layout
 
 ```
-backend/                     # Python backend + CLI
-├── main.py                  # CLI entry point, conversation loop
+backend/                     # Python backend
 ├── config.py                # Env vars, constants, model IDs
-├── audio.py                 # Microphone recording, silence detection
 ├── voxtral.py               # STT transcription + streaming TTS
 ├── brain.py                 # System prompt, health context, LLM tool use
-├── viz.py                   # Terminal waveforms, health banner
 ├── health_server.py         # FastAPI endpoint
 ├── health_store.py          # PostgreSQL storage and queries
 ├── nudge.py                 # Daily biometric-triggered nudge detector
@@ -68,15 +65,12 @@ brain.py exposes 6 tools to Mistral Small 4 via function calling:
 
 | Scope | Covers |
 |-------|--------|
-| `audio` | audio.py, recording, mic |
 | `tts` | voxtral.py TTS |
 | `stt` | voxtral.py STT |
 | `brain` | brain.py, system prompt, LLM |
-| `viz` | viz.py, terminal UI |
 | `server` | health_server.py, API endpoints |
 | `store` | health_store.py, PostgreSQL |
 | `config` | config.py, env vars |
-| `cli` | main.py, arg parsing |
 | `nudge` | nudge.py, daily biometric nudge detection |
 | `berries` | berries.py, Alan Play rewards ledger |
 | `front` | frontend/ web app |
@@ -84,15 +78,6 @@ brain.py exposes 6 tools to Mistral Small 4 via function calling:
 ## Commands
 
 ```bash
-# Run the CLI (voice mode)
-uv run vital
-
-# Run the CLI (text mode)
-uv run vital --text
-
-# Run the weekly vocal checkup ritual
-uv run vital --checkup
-
 # Run the daily biometric nudge detector (cron / Shortcut hook)
 uv run vital-nudge
 
@@ -125,4 +110,3 @@ Project owner identity is configured in `.claude/rules/authorship.md` (local, no
 - **No medical diagnosis** — the LLM must ALWAYS recommend a professional for medical concerns
 - No secrets in code — everything via env vars
 - Code and comments in English
-- Terminal aesthetic: Mistral orange `#ff7000`, block chars, animated waveforms
