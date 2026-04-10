@@ -12,7 +12,7 @@ Pour plus de détails sur les fondements juridiques et techniques, consultez la 
 
 | Data | Stays on device | Sent to backend | Sent to Mistral API |
 |------|:-:|:-:|:-:|
-| Raw HealthKit data (HR, HRV, sleep...) | Yes | Aggregated only | No |
+| Raw wearable data via Thryve (HR, HRV, sleep...) | Yes | Aggregated only | No |
 | Aggregated metrics (avg, min, max) | Yes | Yes | Yes (anonymous) |
 | User profile (age, sex, height, weight) | Yes | Yes | Yes (no name/ID attached) |
 | Voice audio | No | Yes (for STT) | Yes (Voxtral STT) |
@@ -36,9 +36,9 @@ The user's voice is sent to Voxtral STT for transcription. This is the only pote
 
 ## User consent
 
-- HealthKit access requires explicit iOS permission prompt
+- The user authorizes wearable data access via Thryve connection widget
 - The user chooses which metrics to share
-- The user can revoke access at any time via iOS Settings
+- The user can revoke access at any time via Thryve settings
 
 ## Enterprise dashboard (vision)
 
@@ -51,11 +51,11 @@ The user's voice is sent to Voxtral STT for transcription. This is the only pote
 
 | Requirement | Status |
 |-------------|--------|
-| Lawful basis (consent) | Explicit HealthKit permission + in-app consent |
+| Lawful basis (consent) | Explicit Thryve data authorization + in-app consent |
 | Data minimization | Only aggregated metrics sent, no PII |
 | Right to access | User sees all their data in-app |
 | Right to erasure | User can delete all data from the app |
-| Data portability | Health data remains in Apple Health (standard format) |
+| Data portability | Health data accessible via Thryve API (standard format) |
 | Privacy by design | Architecture designed around local-first processing |
 
 ## Future vision

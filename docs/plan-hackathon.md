@@ -16,7 +16,7 @@ L'absentéisme coûte 120 milliards €/an aux entreprises françaises (WTW, 202
 
 ## Le produit
 
-Bilan de santé vocal qui croise **tes réponses vocales** avec ce que ton corps mesure (Apple Watch / HealthKit), pour détecter le burnout avant l'arrêt maladie.
+Bilan de santé vocal qui croise **tes réponses vocales** avec ce que ton corps mesure (montres connectées via Thryve), pour détecter le burnout avant l'arrêt maladie.
 
 - **Avec Watch** → bilan ultra précis (données objectives + déclaratif vocal)
 - **Sans Watch** → bilan quand même (app Santé iPhone + questions vocales du LLM)
@@ -29,7 +29,6 @@ Bilan de santé vocal qui croise **tes réponses vocales** avec ce que ton corps
 
 - [x] brain.py — system prompt stress/burnout, 6 tools (summary, latest, trend, compare, correlation, book_consultation)
 - [x] **brain.py — mode `weekly_checkup`** : rituel hebdo structuré 5 étapes sur 168h (build_system_message(weekly_checkup=True))
-- [x] **main.py — flag `--checkup`** : `uv run vital --checkup` lance le rituel directement
 - [x] **nudge.py — daily nudge detector** : `vital-nudge` scanne 24h, déclenche uniquement si HRV ↓15%, sommeil <6h ou FC repos >80
 - [x] **berries.py — Alan Play ledger** : 3 actions vérifiables côté serveur (weekly_checkup=50, daily_nudge_accepted=5, streak_4_weeks=100)
 - [x] health_store.py — 20 métriques, PostgreSQL, toutes les queries
@@ -77,7 +76,7 @@ Pendant le pitch, **un seul speaker** (Alexis). Pendant le Q&A, le jury pose des
 ### 10h-13h — Build core (parallèle)
 | Qui | Quoi |
 |-----|------|
-| **Spidey + Claude** | App iPhone Swift (HealthKit + API client + vocal UI) |
+| **Spidey + Claude** | Web app (frontend + FastAPI backend) |
 | **Byron** | Backend Python (POST /ask + intégrations) |
 | **Zinedine** | Design app + maquette dashboard |
 | **Alexis** | Structure du pitch + slides |

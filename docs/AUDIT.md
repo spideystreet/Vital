@@ -81,9 +81,6 @@
 ### N1. HTTP/2 for TTS httpx client
 `http2=False` in `_get_tts_client()`. HTTP/2 multiplexing would reduce connection overhead for concurrent TTS sentences.
 
-### N2. Prewarm CLI creates a real TTS request
-`main.py` warms up by sending `"."` via `_stream_tts_to_queue` — a billable API call. Server uses `prewarm_tts()` (HEAD request only). Unify.
-
 ### N3. `import base64 as _b64` inside function bodies
 `health_server.py:105, 158` — move to module level.
 
@@ -92,9 +89,6 @@ Could be replaced with `DISTINCT ON` or window function for better PostgreSQL pe
 
 ### N5. Unbounded queues in voxtral.py
 `sentence_q` and `merged` in `stream_voice_events` have no maxsize. If TTS falls behind, memory grows unbounded.
-
-### N6. Add `vital-seed` CLI entry point
-`seed_data.py` requires `python backend/seed_data.py <scenario>` — should be a `pyproject.toml` script.
 
 ---
 
@@ -105,5 +99,5 @@ Could be replaced with `DISTINCT ON` or window function for better PostgreSQL pe
 | Critical | 2 |
 | High | 5 |
 | Medium | 5 |
-| Nice-to-have | 6 |
-| **Total** | **18** |
+| Nice-to-have | 4 |
+| **Total** | **16** |

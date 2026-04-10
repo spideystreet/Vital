@@ -14,7 +14,7 @@
 │                  FastAPI Backend (Python)      │             │
 │                                               ▼             │
 │  health_server.py                                           │
-│  ├── POST /health        ← Apple Shortcuts (HealthKit)      │
+│  ├── POST /health        ← Thryve API (wearable data)      │
 │  ├── GET  /health/summary                                   │
 │  ├── GET  /health/ping                                      │
 │  ├── POST /voice         ← non-streaming (compat)           │

@@ -204,7 +204,7 @@ Note: `endTimestamp` is `null` for instant measurements (e.g. single heart rate 
 | `audio_exposure` | -- | *not available* | -- | -- |
 | `mindful_minutes` | -- | *not available* | -- | -- |
 
-**4 unmapped metrics** (`walking_hr_avg`, `stand_time`, `audio_exposure`, `mindful_minutes`): these are Apple Health exclusives with no Thryve equivalent. Keep sourcing them from HealthKit directly.
+**4 unmapped metrics** (`walking_hr_avg`, `stand_time`, `audio_exposure`, `mindful_minutes`): These metrics are Apple Health exclusives — not available via Thryve. Omit from MVP or simulate.
 
 ### Thryve-standardized sleep (alternative)
 

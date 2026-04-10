@@ -226,9 +226,9 @@ Every data point can include metadata:
 
 ## Integration Notes for V.I.T.A.L
 
-### Required Wearable Data (Apple Watch provides all)
+### Required Wearable Data
 
-To generate burnout-relevant analytics, the following data must flow from Apple Watch through HealthKit:
+To generate burnout-relevant analytics, the following data must flow from the wearable through Thryve:
 
 | Analytics Output | Required Input from Watch |
 |------------------|--------------------------|
@@ -242,9 +242,9 @@ To generate burnout-relevant analytics, the following data must flow from Apple 
 ### Data Flow
 
 ```
-Apple Watch → HealthKit → V.I.T.A.L health_server.py → Thryve API → Analytics scores
-                                                                          ↓
-                                                              brain.py (LLM context)
+Wearable → Thryve SDK → Thryve API → V.I.T.A.L backend → Analytics scores
+                                                                ↓
+                                                    brain.py (LLM context)
 ```
 
 ### Key Considerations
