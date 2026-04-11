@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Image, Pressable, StyleSheet, ScrollView, SafeAreaView, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
@@ -14,9 +14,15 @@ const PATIENT_ID = 'patient-1';
 
 // ─── Splash (OnboardingIntro) ─────────────────────────────────────────────────
 
-function OnboardingIntro({ onDone }: { onDone: () => void }) {
+function OnboardingIntro({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }) {
   return (
     <SafeAreaView style={styles.splashScreen}>
+      <View style={styles.splashSkipRow}>
+        <Pressable onPress={onSkip} hitSlop={12} accessibilityRole="button" accessibilityLabel="Passer l'onboarding">
+          <Text style={styles.skipLinkText}>Passer</Text>
+        </Pressable>
+      </View>
+
       <View style={styles.splashTop}>
         <Image
           source={Platform.OS === 'web' ? { uri: '/Vital_logo.svg' } : require('./assets/vital_logo.png')}
@@ -24,9 +30,6 @@ function OnboardingIntro({ onDone }: { onDone: () => void }) {
           resizeMode="contain"
           accessibilityLabel="VITAL"
         />
-        <Text style={styles.splashTagline}>
-          Ton corps parle.{'\n'}On traduit.
-        </Text>
         <Text style={styles.splashSub}>
           Voix · Biométrie · Burnout — détecté avant qu'il arrive.
         </Text>
@@ -83,7 +86,7 @@ function normalizeForm(data: any): IntakeField[] {
   }));
 }
 
-function VoiceIntake({ onDone }: { onDone: (firstName: string) => void }) {
+function VoiceIntake({ onDone, onSkip }: { onDone: (firstName: string) => void; onSkip: () => void }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [fields, setFields] = useState<IntakeField[]>(
     Object.keys(FIELD_META).map((key) => ({ key, ...FIELD_META[key], value: null }))
@@ -166,6 +169,18 @@ function VoiceIntake({ onDone }: { onDone: (firstName: string) => void }) {
 
   return (
     <SafeAreaView style={styles.intakeScreen}>
+      <View style={styles.intakeSkipRow}>
+        <Pressable onPress={onSkip} hitSlop={12} accessibilityRole="button" accessibilityLabel="Passer l'enregistrement vocal">
+          <Text style={styles.skipLinkText}>Passer</Text>
+        </Pressable>
+      </View>
+
+      <ScrollView
+        style={styles.intakeScroll}
+        contentContainerStyle={styles.intakeScrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
       <Text style={styles.intakeTitle}>Parle-nous de toi</Text>
       <Text style={styles.intakeSub}>
         {phase === 'init' ? 'Connexion…' :
@@ -217,6 +232,7 @@ function VoiceIntake({ onDone }: { onDone: (firstName: string) => void }) {
           <Text style={styles.btnText}>Confirmer →</Text>
         </Pressable>
       )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -448,8 +464,9 @@ function Dashboard({ onMetricPress, userName }: { onMetricPress: (label: string,
 
           {bloodTestStatus === 'idle' && (
             <Pressable style={styles.bloodTestBanner} onPress={() => setShowUpload(true)}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.bloodTestBannerTitle}>🩸 Déposez votre bilan sanguin</Text>
+              <MaterialCommunityIcons name="blood-bag" size={26} color="#dc2626" style={styles.bloodTestBannerIcon} />
+              <View style={styles.bloodTestBannerTextCol}>
+                <Text style={styles.bloodTestBannerTitle}>Déposez votre bilan sanguin</Text>
                 <Text style={styles.bloodTestBannerSub}>Enrichissez votre suivi avec vos données biologiques</Text>
               </View>
               <Text style={styles.bloodTestBannerArrow}>→</Text>
@@ -649,8 +666,27 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('dashboard');
   const [pendingContext, setPendingContext] = useState<string | null>(null);
 
-  if (phase === 'intro') return <OnboardingIntro onDone={() => setPhase('intake')} />;
-  if (phase === 'intake') return <VoiceIntake onDone={(name) => { setUserName(name); setPhase('main'); }} />;
+  function skipOnboardingToMain() {
+    setUserName('');
+    setPhase('main');
+  }
+
+  if (phase === 'intro') {
+    return (
+      <OnboardingIntro
+        onDone={() => setPhase('intake')}
+        onSkip={skipOnboardingToMain}
+      />
+    );
+  }
+  if (phase === 'intake') {
+    return (
+      <VoiceIntake
+        onDone={(name) => { setUserName(name); setPhase('main'); }}
+        onSkip={skipOnboardingToMain}
+      />
+    );
+  }
 
   function handleMetricPress(label: string, value: string, unit: string) {
     const msg = `Mon score ${label} est à ${value}${unit ? ' ' + unit : ''}. Qu'est-ce que ça indique pour ma santé ?`;
@@ -675,12 +711,13 @@ export default function App() {
 
 const styles = StyleSheet.create({
   // ── Splash / Onboarding ──
-  splashScreen: { flex: 1, backgroundColor: '#fff', justifyContent: 'space-between', paddingHorizontal: 32, paddingTop: 60, paddingBottom: 48 },
-  splashTop: { gap: 24 },
-  onboardingLogo: { width: '88%', maxWidth: 320, aspectRatio: 390 / 101, alignSelf: 'flex-start' },
-  splashTagline: { fontFamily: fontSans, fontSize: 36, fontWeight: '800', color: '#111827', lineHeight: 44 },
-  splashSub: { fontFamily: fontSans, fontSize: 15, color: '#6b7280', lineHeight: 24 },
-  splashBottom: { gap: 14 },
+  splashScreen: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 48, paddingTop: 16, paddingBottom: 48 },
+  splashSkipRow: { width: '100%', flexDirection: 'row', justifyContent: 'flex-end', paddingBottom: 8 },
+  skipLinkText: { fontFamily: fontSans, fontSize: 15, fontWeight: '600', color: '#6b7280' },
+  splashTop: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 24, width: '100%' },
+  onboardingLogo: { width: '88%', maxWidth: 300, aspectRatio: 390 / 101, alignSelf: 'center' },
+  splashSub: { fontFamily: fontSans, fontSize: 15, color: '#6b7280', lineHeight: 24, textAlign: 'center' },
+  splashBottom: { gap: 14, width: '100%', alignItems: 'center' },
   splashLegal: { fontFamily: fontSans, textAlign: 'center', fontSize: 12, color: '#9ca3af' },
 
   // ── Shared buttons ──
@@ -691,7 +728,10 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 12, width: '100%', marginTop: 8 },
 
   // ── Voice Intake ──
-  intakeScreen: { flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 20 },
+  intakeScreen: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 48, paddingTop: 8 },
+  intakeSkipRow: { width: '100%', flexDirection: 'row', justifyContent: 'flex-end', paddingBottom: 8 },
+  intakeScroll: { flex: 1, width: '100%' },
+  intakeScrollContent: { alignItems: 'center', paddingBottom: 32, gap: 20, width: '100%' },
   intakeTitle: { fontFamily: fontSans, fontSize: 28, fontWeight: '800', color: '#111827', textAlign: 'center' },
   intakeSub: { fontFamily: fontSans, fontSize: 14, color: '#6b7280', textAlign: 'center' },
   intakeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', width: '100%' },
@@ -727,7 +767,7 @@ const styles = StyleSheet.create({
     paddingTop: 38,
     paddingBottom: 68,
     ...(Platform.OS === 'web'
-      ? ({ backgroundImage: 'linear-gradient(180deg, #5178B6 0%, #FA9F72 100%)' } as any)
+      ? ({ backgroundImage: 'linear-gradient(180deg, #5178B6 0%, #DDEBF4 100%)' } as any)
       : { backgroundColor: '#8CB4DD' }),
   },
   dashHeaderTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 },
@@ -763,7 +803,9 @@ const styles = StyleSheet.create({
   ringUnit: { fontFamily: fontSans, fontSize: 10, fontWeight: '500', color: '#9ca3af', lineHeight: 12 },
 
   // ── Blood test banner ──
-  bloodTestBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f9fafb', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#e5e7eb', marginTop: 8 },
+  bloodTestBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f9fafb', borderRadius: 16, padding: 16, marginTop: 8, gap: 12 },
+  bloodTestBannerIcon: { marginTop: 2 },
+  bloodTestBannerTextCol: { flex: 1, gap: 2 },
   bloodTestBannerTitle: { fontFamily: fontSans, color: '#111827', fontWeight: '700', fontSize: 15, marginBottom: 2 },
   bloodTestBannerSub: { fontFamily: fontSans, color: '#9ca3af', fontSize: 12 },
   bloodTestBannerArrow: { fontFamily: fontSans, color: '#111827', fontSize: 20, fontWeight: '700' },
