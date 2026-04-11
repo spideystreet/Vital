@@ -320,8 +320,9 @@ async def checkup_respond(req: RespondRequest):
         # Step c: LLM with tool use
         messages_copy = list(session.messages)
 
+        tool_results: list[dict] = []
         try:
-            llm_text, _emotions = await loop.run_in_executor(
+            llm_text, _emotions, tool_results = await loop.run_in_executor(
                 None,
                 lambda: chat_with_tools(
                     client, messages_copy, session.patient_ctx, session.session_data,
@@ -345,13 +346,54 @@ async def checkup_respond(req: RespondRequest):
         # Update session history with assistant response
         session.messages.append({"role": "assistant", "content": final_text})
 
-        # Step e: stream text token by token
-        if burnout_result and burnout_result.score >= 60:
-            yield sse_event("emotion", {"state": "alert", "label": "Attention, score élevé"})
+        # Step e: surface tool side-effects to the frontend (booking popup, challenge badge)
+        booking_record = next(
+            (tr for tr in tool_results if tr["name"] == "book_consultation"),
+            None,
+        )
+        challenge_record = next(
+            (tr for tr in tool_results if tr["name"] == "propose_challenge"),
+            None,
+        )
+
+        if booking_record:
+            yield sse_event("booking", booking_record["result"])
+        if challenge_record:
+            yield sse_event("challenge", challenge_record["result"])
+
+        # Emotion reflects the actual conversation flow: tool calls first,
+        # then burnout score as a fallback when no side-effect fired.
+        tool_names = {tr["name"] for tr in tool_results}
+        if booking_record:
+            yield sse_event(
+                "emotion",
+                {"state": "encouraging", "label": "Je te réserve ça"},
+            )
+        elif challenge_record:
+            yield sse_event(
+                "emotion",
+                {"state": "encouraging", "label": "Nouveau défi pour toi"},
+            )
+        elif "read_memory" in tool_names or "append_memory" in tool_names:
+            yield sse_event(
+                "emotion",
+                {"state": "thinking", "label": "Je me rappelle"},
+            )
+        elif burnout_result and burnout_result.score >= 60:
+            yield sse_event(
+                "emotion",
+                {"state": "alert", "label": "Attention, score élevé"},
+            )
         elif burnout_result and burnout_result.score >= 30:
-            yield sse_event("emotion", {"state": "concerned", "label": "Je détecte du stress"})
+            yield sse_event(
+                "emotion",
+                {"state": "concerned", "label": "Je détecte du stress"},
+            )
         else:
-            yield sse_event("emotion", {"state": "encouraging", "label": "Bonne nouvelle !"})
+            yield sse_event(
+                "emotion",
+                {"state": "encouraging", "label": "Bonne nouvelle !"},
+            )
 
         # Send text in small chunks (simulate streaming feel)
         words = final_text.split(" ")
@@ -720,6 +762,179 @@ async def dev_onboarding_seed(
     except onboarding_module.OnboardingError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
     return {"ok": True, "seeded_from": str(seed_path)}
+
+
+# ---------------------------------------------------------------------------
+# Vocal intake (free-speech onboarding) — new patient form with 5 categories
+# ---------------------------------------------------------------------------
+
+from backend import blood_ocr, memory as memory_module, vocal_intake  # noqa: E402
+
+
+class IntakeStartRequest(BaseModel):
+    patient_id: str
+
+
+class IntakeTextRequest(BaseModel):
+    session_id: str
+    transcript: str
+
+
+class IntakeFinalizeRequest(BaseModel):
+    session_id: str
+
+
+@app.get("/api/intake/schema")
+async def intake_schema() -> dict:
+    """Return the 5-category form schema (static, no session needed)."""
+    return {"categories": vocal_intake.schema_to_dict()}
+
+
+@app.post("/api/intake/start")
+async def intake_start(req: IntakeStartRequest) -> dict:
+    """Open a new vocal intake session for a patient."""
+    session = vocal_intake.start(req.patient_id)
+    return vocal_intake.form_state(session)
+
+
+@app.post("/api/intake/audio")
+async def intake_audio(
+    session_id: str,
+    audio: UploadFile = File(...),
+) -> dict:
+    """Transcribe one utterance, extract fields, merge into the form.
+
+    The frontend calls this with a short audio clip each time the user
+    pauses (push-to-talk or VAD segment). The response includes the full
+    form state so the page can re-render all filled fields.
+    """
+    session = vocal_intake.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="intake session not found")
+
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="empty audio")
+
+    client = _get_mistral()
+    loop = asyncio.get_running_loop()
+    try:
+        transcript = await loop.run_in_executor(None, transcribe, client, audio_bytes)
+    except Exception as exc:
+        logger.exception("intake STT failed")
+        raise HTTPException(status_code=500, detail=f"STT failed: {exc}") from exc
+
+    return await loop.run_in_executor(
+        None, vocal_intake.ingest, session, client, transcript or ""
+    )
+
+
+@app.post("/api/intake/text")
+async def intake_text(req: IntakeTextRequest) -> dict:
+    """Dev/test hook: ingest a transcript directly (bypasses Voxtral STT)."""
+    session = vocal_intake.get(req.session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="intake session not found")
+
+    client = _get_mistral()
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, vocal_intake.ingest, session, client, req.transcript
+    )
+
+
+@app.post("/api/intake/finalize")
+async def intake_finalize(req: IntakeFinalizeRequest) -> dict:
+    """Persist the extracted form to the patient's memory file."""
+    try:
+        return vocal_intake.finalize(req.session_id)
+    except RuntimeError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+
+
+# ---------------------------------------------------------------------------
+# Blood panel PDF OCR
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/blood-panel/upload")
+async def blood_panel_upload(pdf: UploadFile = File(...)) -> dict:
+    """Upload a blood panel PDF, OCR it with Mistral, extract biomarkers.
+
+    Returns:
+        biomarkers: dict of {key: {value, unit}} for every biomarker found
+        markdown:   the full OCR markdown (useful for the frontend preview)
+        page_count: number of OCR'd pages
+    """
+    pdf_bytes = await pdf.read()
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="empty pdf")
+    filename = pdf.filename or "bilan.pdf"
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="expected a .pdf file")
+
+    client = _get_mistral()
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(
+            None, blood_ocr.process_blood_panel, client, pdf_bytes, filename
+        )
+    except Exception as exc:
+        logger.exception("blood panel OCR failed")
+        raise HTTPException(status_code=500, detail=f"OCR failed: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Challenges + Bookings — read endpoints for dedicated frontend pages
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/challenges/{patient_id}")
+async def list_challenges(patient_id: str) -> dict:
+    """Return the patient's personalized challenges, split by status.
+
+    Shape:
+        {
+          "active":  [ {date, title, metric, target, status, reason}, ... ],
+          "history": [ ...non-active challenges... ],
+          "total":   int
+        }
+    """
+    patient_ctx = _resolve_patient_ctx(patient_id)
+    all_challenges = memory_module.read_all_challenges(patient_ctx.token)
+    active = [c for c in all_challenges if c["status"] == "active"]
+    history = [c for c in all_challenges if c["status"] != "active"]
+    return {
+        "active": active,
+        "history": history,
+        "total": len(all_challenges),
+    }
+
+
+@app.get("/api/bookings/{patient_id}")
+async def list_bookings(patient_id: str) -> dict:
+    """Return every consultation booking made for the patient, oldest first.
+
+    Shape:
+        {
+          "bookings": [
+            {
+              "created_at": "2026-04-11",
+              "specialty": "ORL",
+              "professional": "Dr. Camille Rousseau",
+              "location": "Paris 9e",
+              "slot": "aujourd'hui 17h30",
+              "urgency": "urgent",
+              "status": "confirmed",
+              "reason": "..."
+            }, ...
+          ],
+          "total": int
+        }
+    """
+    patient_ctx = _resolve_patient_ctx(patient_id)
+    bookings = memory_module.read_bookings(patient_ctx.token)
+    return {"bookings": bookings, "total": len(bookings)}
 
 
 # ---------------------------------------------------------------------------

@@ -57,17 +57,77 @@ class DashboardStat:
 
 
 @dataclass
+class ChallengeProgress:
+    """Live snapshot of the user's active personalized challenge."""
+
+    title: str
+    metric: str
+    target: int
+    current: float
+    unit: str
+    progress_pct: float
+    reason: str
+    date: str
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class DashboardPayload:
     """Response for GET /api/dashboard/{patient_id}."""
 
     stats: list[DashboardStat]
     generated_at: str
+    challenge: ChallengeProgress | None = None
 
     def to_dict(self) -> dict:
         return {
             "stats": [s.to_dict() for s in self.stats],
             "generated_at": self.generated_at,
+            "challenge": self.challenge.to_dict() if self.challenge else None,
         }
+
+
+# Friendly unit labels for challenge metrics.
+_CHALLENGE_UNITS: dict[str, str] = {
+    "steps": "pas",
+}
+
+
+def _build_challenge_progress(
+    patient: PatientContext,
+    session: SessionData,
+) -> ChallengeProgress | None:
+    """Read the active challenge from memory and compute live progress.
+
+    Returns None if the user has no active challenge or the challenge's
+    metric is missing from the current session's vitals snapshot.
+    """
+    active = memory.read_active_challenge(patient.token)
+    if active is None:
+        return None
+
+    metric = active["metric"]
+    values = (session.vitals or {}).get(metric, [])
+    nums = [v["value"] for v in values if isinstance(v.get("value"), (int, float))]
+    current = float(nums[-1]) if nums else 0.0
+
+    target = int(active["target"])
+    progress_pct = (
+        round(min(100.0, 100.0 * current / target), 1) if target > 0 else 0.0
+    )
+
+    return ChallengeProgress(
+        title=active["title"],
+        metric=metric,
+        target=target,
+        current=current,
+        unit=_CHALLENGE_UNITS.get(metric, metric),
+        progress_pct=progress_pct,
+        reason=active["reason"],
+        date=active["date"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -415,7 +475,10 @@ async def generate_dashboard(
             )
         )
 
+    challenge = _build_challenge_progress(patient, session)
+
     return DashboardPayload(
         stats=stats,
         generated_at=datetime.now(UTC).isoformat(),
+        challenge=challenge,
     )

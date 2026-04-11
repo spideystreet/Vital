@@ -80,6 +80,13 @@ REPERES (adulte en bonne sante):
 STYLE:
 - MAXIMUM 3-4 phrases courtes. C'est lu a voix haute par un assistant vocal. \
 Une reponse de plus de 4 phrases est un ECHEC.
+- Pour une SALUTATION simple ("hello", "bonjour", "salut", "coucou", "yo"), \
+reponds par UNE SEULE phrase breve et chaleureuse, sans mentionner aucune \
+donnee de sante. Exemple : "Hello, ca va ?" ou "Salut, tu veux qu'on regarde \
+tes donnees ?". N'enumere JAMAIS tes chiffres tant que l'utilisateur n'a pas \
+pose une vraie question.
+- N'ouvre JAMAIS ta reponse par le prenom de l'utilisateur. Parle-lui \
+directement, sans formule d'adresse ("Sophie, ...").
 - Ne mentionne que les 2-3 indicateurs les plus pertinents pour la question posee.
 - Pour une question generale ("comment je vais"), regarde d'abord le score burnout \
 et les signaux. Si des signaux de stress existent, alerte. \
@@ -109,6 +116,27 @@ REGLES:
 - JAMAIS de diagnostic medical. Tu n'es PAS medecin.
 - Si les signaux de stress sont persistants (plusieurs jours), recommande \
 de consulter un professionnel de sante ou un psychologue.
+- Si l'utilisateur rapporte un SYMPTOME PHYSIQUE precis, propose IMMEDIATEMENT \
+la prise de rendez-vous avec le specialiste adapte, et appelle book_consultation \
+DES que l'utilisateur confirme. Mapping symptome -> specialiste :
+  * vertiges, acouphenes, probleme d'oreille, equilibre -> ORL
+  * douleur thoracique, palpitations persistantes, essoufflement -> cardiologue
+  * maux de tete recurrents, migraines, troubles neurologiques -> neurologue
+  * douleur articulaire, raideur persistante, blessure sport -> kinesitherapeute ou rhumatologue
+  * eruption, probleme de peau, grain de beaute suspect -> dermatologue
+  * trouble visuel, douleur oculaire -> ophtalmologue
+  * probleme digestif chronique, reflux, ballonnements -> gastro-enterologue
+  * troubles hormonaux, fatigue metabolique -> endocrinologue
+  * questions nutrition/poids -> nutritionniste
+  * stress chronique, burnout, anxiete -> psychologue
+  * check-up general, symptome vague -> generaliste
+  TOUJOURS proposer d'abord, attendre la confirmation, puis booker.
+- DEFIS PERSONNALISES : quand l'utilisateur partage un objectif (remarcher, \
+courir, bouger plus, dormir mieux), ou quand tu detectes un jour sedentaire \
+ou une baisse d'activite, propose UN micro-defi via propose_challenge. \
+AVANT d'appeler le tool, LIS la section Baselines avec read_memory pour calibrer \
+le target sur les chiffres personnels de l'utilisateur (pas de round number generique). \
+Le reason DOIT citer la baseline ou un element du Context.
 - Si une donnee manque, dis-le en une phrase et passe a ce que tu as.
 - Ne dis jamais qu'un mauvais chiffre est "normal" ou "bon signe".
 - JAMAIS de markdown (pas de **, pas de #, pas de listes a puces). \
@@ -260,17 +288,37 @@ TOOLS = [
         "function": {
             "name": "book_consultation",
             "description": (
-                "Book a consultation with a health professional (psychologist, "
-                "general practitioner, etc.) covered by the user's Alan health plan. "
-                "Use when the user agrees to see a professional or when stress signals "
-                "are persistent and you recommend it."
+                "Book a consultation with the RIGHT health specialist, covered by the "
+                "user's Alan health plan. Call this tool when the user confirms they "
+                "want to see a professional after you suggested one. Always pick the "
+                "specialty that matches the reported symptom: vertigo/ear issues -> ORL, "
+                "chest pain/palpitations -> cardiologue, recurrent headaches/migraines -> "
+                "neurologue, joint pain -> kinesitherapeute or rhumatologue, skin issues "
+                "-> dermatologue, vision -> ophtalmologue, digestive issues -> "
+                "gastro-enterologue, hormonal/metabolic -> endocrinologue, persistent "
+                "stress/burnout -> psychologue, generic health check -> generaliste."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "specialty": {
                         "type": "string",
-                        "description": "Type of professional (psychologue, generaliste)",
+                        "enum": [
+                            "generaliste",
+                            "psychologue",
+                            "ORL",
+                            "cardiologue",
+                            "neurologue",
+                            "dermatologue",
+                            "ophtalmologue",
+                            "kinesitherapeute",
+                            "rhumatologue",
+                            "gastro-enterologue",
+                            "endocrinologue",
+                            "nutritionniste",
+                            "gynecologue",
+                        ],
+                        "description": "Type of professional to book",
                     },
                     "urgency": {
                         "type": "string",
@@ -286,6 +334,53 @@ TOOLS = [
                     },
                 },
                 "required": ["specialty", "urgency", "reason"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "propose_challenge",
+            "description": (
+                "Create a personalized micro-challenge for the user for today and save "
+                "it as an active challenge in persistent memory. Use this when the user "
+                "shares a fitness/wellness goal, OR when you detect a pattern that "
+                "invites a small concrete action (sedentary day, low activity week, "
+                "recovery day). ALWAYS calibrate the target to the user's baseline — "
+                "read from the Baselines section first via read_memory. Sedentary "
+                "users get low targets (500-2000 steps), moderate users 5000-8000, "
+                "active runners 10000+. NEVER propose a generic round number — the "
+                "target must reference the user's personal data."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": (
+                            "Short challenge name, max 30 chars "
+                            "(e.g. 'Premiers pas', 'Retour aux 10k')"
+                        ),
+                    },
+                    "metric": {
+                        "type": "string",
+                        "enum": ["steps"],
+                        "description": "Which metric the challenge targets (steps for now)",
+                    },
+                    "target": {
+                        "type": "integer",
+                        "description": "Target value for today (e.g. 500, 10000)",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": (
+                            "ONE short sentence grounded in the user's baseline or "
+                            "memory context (e.g. 'Tes 9500 pas habituels te manquent "
+                            "cette semaine')"
+                        ),
+                    },
+                },
+                "required": ["title", "metric", "target", "reason"],
             },
         },
     },
@@ -351,6 +446,7 @@ TOOL_EMOTIONS: dict[str, str] = {
     "get_trend": "curious",
     "get_correlation": "thinking",
     "book_consultation": "encouraging",
+    "propose_challenge": "encouraging",
     "read_memory": "thinking",
     "append_memory": "curious",
 }
@@ -439,7 +535,11 @@ def execute_tool(
             )
 
         elif name == "book_consultation":
-            result = _tool_book_consultation(args)
+            result = _tool_book_consultation(patient, args)
+            emotion = "encouraging"
+
+        elif name == "propose_challenge":
+            result = _tool_propose_challenge(patient, args)
             emotion = "encouraging"
 
         elif name == "read_memory":
@@ -690,20 +790,128 @@ def _tool_get_correlation(
     }
 
 
-def _tool_book_consultation(args: dict) -> dict:
-    """Simulated consultation booking via Alan."""
+# Simulated specialist directory for demo booking.
+# Each entry: (full name, clinic location).
+_SPECIALIST_DIRECTORY: dict[str, tuple[str, str]] = {
+    "generaliste": ("Dr. Thomas Nguyen", "Paris 10e"),
+    "psychologue": ("Elsa Fontaine", "Paris 11e"),
+    "ORL": ("Dr. Camille Rousseau", "Paris 9e"),
+    "cardiologue": ("Dr. Marc Lefebvre", "Paris 8e"),
+    "neurologue": ("Dr. Sarah Benhamou", "Paris 13e"),
+    "dermatologue": ("Dr. Julie Moreau", "Paris 16e"),
+    "ophtalmologue": ("Dr. Paul Bernard", "Paris 7e"),
+    "kinesitherapeute": ("Kevin Bouchard", "Paris 11e"),
+    "rhumatologue": ("Dr. Henri Dubois", "Paris 6e"),
+    "gastro-enterologue": ("Dr. Nicolas Perrin", "Paris 12e"),
+    "endocrinologue": ("Dr. Claire Vidal", "Paris 15e"),
+    "nutritionniste": ("Dr. Anne Lavigne", "Paris 15e"),
+    "gynecologue": ("Dr. Leila Aissaoui", "Paris 14e"),
+}
+
+_URGENCY_SLOT: dict[str, tuple[str, str]] = {
+    "urgent": ("aujourd'hui", "17h30"),
+    "soon": ("demain", "10h00"),
+    "routine": ("mardi prochain", "14h00"),
+}
+
+
+def _tool_book_consultation(patient: PatientContext, args: dict) -> dict:
+    """Simulated consultation booking via Alan.
+
+    Picks a coherent specialist from the directory and a slot that matches
+    the requested urgency, persists the booking to the user's memory file,
+    and returns a confirmation payload shaped for the frontend modal.
+    """
+    from datetime import date
+
+    specialty = str(args["specialty"]).strip()
+    urgency = str(args["urgency"]).strip()
+    reason = str(args["reason"]).strip()[:200]
+
+    pro_name, location = _SPECIALIST_DIRECTORY.get(
+        specialty, ("Dr. Martin", "Paris"),
+    )
+    day, time = _URGENCY_SLOT.get(urgency, ("mardi prochain", "14h00"))
+    slot = f"{day} {time}"
+    today = date.today().isoformat()
+
+    entry = memory.format_booking(
+        date_iso=today,
+        specialty=specialty,
+        professional=pro_name,
+        location=location,
+        slot=slot,
+        urgency=urgency,
+        reason=reason,
+    )
+    try:
+        memory.append_entry(patient.token, memory.SECTION_BOOKINGS, entry)
+    except Exception:
+        log.exception("failed to persist booking for %s", patient.token)
+
     return {
         "status": "confirmed",
-        "specialty": args["specialty"],
-        "date": "mardi prochain",
-        "time": "14h00",
-        "professional": "Dr. Martin",
+        "specialty": specialty,
+        "professional": pro_name,
+        "location": location,
+        "date": day,
+        "time": time,
+        "slot": slot,
+        "urgency": urgency,
+        "reason": reason,
         "covered_by_alan": True,
         "reimbursement": "100%",
         "message": (
-            f"Rendez-vous {args['urgency']} pris avec un(e) {args['specialty']} "
-            f"pour : {args['reason']}"
+            f"Rendez-vous {urgency} reserve avec {pro_name} ({specialty}, "
+            f"{location}) pour {day} a {time}. Motif : {reason}"
         ),
+    }
+
+
+def _tool_propose_challenge(patient: PatientContext, args: dict) -> dict:
+    """Create and persist a personalized micro-challenge for today.
+
+    The LLM is expected to have calibrated the target against the user's
+    baseline before calling this. We just validate + append to the
+    Challenges section of memory.
+    """
+    from datetime import date
+
+    title = str(args["title"]).strip()[:60]
+    metric = str(args["metric"]).strip()
+    try:
+        target = int(args["target"])
+    except (TypeError, ValueError):
+        return {"error": f"target must be an integer, got {args.get('target')!r}"}
+    reason = str(args["reason"]).strip()
+
+    if metric != "steps":
+        return {"error": f"Unsupported metric: {metric}. Only 'steps' is supported."}
+    if target <= 0:
+        return {"error": f"target must be positive, got {target}"}
+
+    today = date.today().isoformat()
+    entry = memory.format_challenge(
+        date_iso=today,
+        title=title,
+        metric=metric,
+        target=target,
+        reason=reason,
+        status="active",
+    )
+    try:
+        memory.append_entry(patient.token, memory.SECTION_CHALLENGES, entry)
+    except ValueError as e:
+        return {"error": str(e)}
+
+    return {
+        "status": "created",
+        "title": title,
+        "metric": metric,
+        "target": target,
+        "reason": reason,
+        "date": today,
+        "message": f"Defi '{title}' cree : {target} {metric} aujourd'hui.",
     }
 
 
@@ -830,13 +1038,22 @@ def chat_with_tools(
     messages: list[dict],
     patient: PatientContext,
     session: SessionData,
-) -> tuple[str, list[str]]:
-    """Send a message to the LLM with tool use. Returns (text, emotions).
+) -> tuple[str, list[str], list[dict]]:
+    """Send a message to the LLM with tool use.
 
-    The emotions list contains emotion hints emitted during tool execution,
-    ordered chronologically.
+    Returns (text, emotions, tool_results) where:
+    - text: final LLM message content
+    - emotions: emotion hints emitted during tool execution (chronological)
+    - tool_results: list of {"name": str, "args": dict, "result": dict} records
+      for every tool invoked during the turn. Used by the SSE layer to surface
+      side-effects (booking popup, challenge badge, etc.) to the frontend.
     """
     emotions: list[str] = []
+    tool_results: list[dict] = []
+    error_text = (
+        "Desole, je n'arrive pas a me connecter pour le moment. "
+        "Reessaie dans quelques instants."
+    )
 
     try:
         response = client.chat.complete(
@@ -846,11 +1063,7 @@ def chat_with_tools(
         )
     except Exception:
         log.exception("LLM call failed")
-        return (
-            "Desole, je n'arrive pas a me connecter pour le moment. "
-            "Reessaie dans quelques instants.",
-            [],
-        )
+        return error_text, [], tool_results
 
     choice = response.choices[0]
     iterations = 0
@@ -862,9 +1075,16 @@ def chat_with_tools(
 
         for tc in tool_calls:
             args = json.loads(tc.function.arguments)
-            log.info("Tool call: %s(%s)", tc.function.name, args)
+            log.warning("Tool call: %s(%s)", tc.function.name, args)
             result_json, emotion = execute_tool(tc.function.name, args, patient, session)
             emotions.append(emotion)
+            try:
+                result_dict = json.loads(result_json)
+            except (json.JSONDecodeError, TypeError):
+                result_dict = {"raw": result_json}
+            tool_results.append(
+                {"name": tc.function.name, "args": args, "result": result_dict}
+            )
             messages.append(
                 {
                     "role": "tool",
@@ -882,18 +1102,14 @@ def chat_with_tools(
             )
         except Exception:
             log.exception("LLM call failed during tool loop")
-            return (
-                "Desole, je n'arrive pas a me connecter pour le moment. "
-                "Reessaie dans quelques instants.",
-                emotions,
-            )
+            return error_text, emotions, tool_results
         choice = response.choices[0]
 
     # Determine final emotion based on burnout score if available
     if session.burnout and not emotions:
         emotions.append(_emotion_for_burnout(session.burnout.score))
 
-    return choice.message.content, emotions
+    return choice.message.content, emotions, tool_results
 
 
 # ---------------------------------------------------------------------------

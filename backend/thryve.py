@@ -146,6 +146,7 @@ class ThryveClient:
             METRIC_CODES["resting_hr"],
             METRIC_CODES["sleep_quality"],
             METRIC_CODES["heart_rate_sleep"],
+            METRIC_CODES["steps"],
         ]
         start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         end = datetime.now().strftime("%Y-%m-%d")

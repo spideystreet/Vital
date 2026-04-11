@@ -29,6 +29,7 @@ STT_MODEL = "voxtral-mini-latest"
 REALTIME_STT_MODEL = "voxtral-mini-transcribe-realtime-2602"
 LLM_MODEL = "mistral-small-latest"
 TTS_MODEL = "voxtral-mini-tts-latest"
+OCR_MODEL = "mistral-ocr-latest"
 
 # --- Audio ---
 SAMPLE_RATE = 16_000  # Voxtral STT requirement

@@ -17,6 +17,7 @@ _DEMO_BASELINES: dict[str, tuple[float, float]] = {
     "resting_hr": (58.7, 3.4),
     "sleep_quality": (76.3, 6.2),
     "heart_rate_sleep": (52.0, 4.0),
+    "steps": (9500.0, 1800.0),
 }
 
 # Last-day values — deliberately offset from baseline so the dashboard
@@ -28,6 +29,7 @@ _DEMO_LATEST: dict[str, float] = {
     "resting_hr": 64.0,   # ~+1.6σ — elevated
     "sleep_quality": 68.0,  # ~-1.3σ — moderate drop
     "heart_rate_sleep": 55.0,
+    "steps": 7200.0,  # ~-1.3σ — below usual, invites a challenge
 }
 
 
