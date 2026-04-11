@@ -1,5 +1,10 @@
-import { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
+import { useState, useRef, useEffect } from 'react';
+import { View, Text, Pressable, StyleSheet, ScrollView, SafeAreaView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { Audio } from 'expo-av';
+import { transcribeAudio } from './services/voxtral';
+import { coachApi } from './services/coachApi';
+
+const PATIENT_ID = 'patient-1';
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 
@@ -77,16 +82,131 @@ function Dashboard() {
   );
 }
 
-// ─── Chat (placeholder) ───────────────────────────────────────────────────────
+// ─── Chat ─────────────────────────────────────────────────────────────────────
+
+type Message = { role: 'coach' | 'user'; text: string };
 
 function Chat() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const sessionRef = useRef<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    coachApi.startSession(PATIENT_ID).then((sid) => { sessionRef.current = sid; }).catch(() => {});
+    loadBrief();
+  }, []);
+
+  async function loadBrief() {
+    setLoading(true);
+    let full = '';
+    let added = false;
+    try {
+      for await (const event of coachApi.brief(PATIENT_ID)) {
+        full += event.text;
+        if (!added) {
+          setMessages((prev) => [...prev, { role: 'coach', text: full }]);
+          added = true;
+        } else {
+          setMessages((prev) => [...prev.slice(0, -1), { role: 'coach', text: full }]);
+        }
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }
+    } catch (e: any) {
+      setMessages((prev) => [...prev, { role: 'coach', text: `Erreur : ${e.message}` }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function sendText(text: string) {
+    if (!text.trim()) return;
+    const sid = sessionRef.current;
+    if (!sid) {
+      setMessages((prev) => [...prev, { role: 'coach', text: 'Session en cours de démarrage, réessaie dans un instant.' }]);
+      return;
+    }
+    setMessages((prev) => [...prev, { role: 'user', text }]);
+    setInput('');
+    setLoading(true);
+    let full = '';
+    let added = false;
+    try {
+      for await (const event of coachApi.reply(sid, text)) {
+        full += event.text;
+        if (!added) {
+          setMessages((prev) => [...prev, { role: 'coach', text: full }]);
+          added = true;
+        } else {
+          setMessages((prev) => [...prev.slice(0, -1), { role: 'coach', text: full }]);
+        }
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }
+    } catch (e: any) {
+      setMessages((prev) => [...prev, { role: 'coach', text: `Erreur : ${e.message}` }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggleVoice() {
+    if (recording) {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI()!;
+      setRecording(null);
+      setLoading(true);
+      try {
+        const text = await transcribeAudio(uri);
+        await sendText(text);
+      } catch (e: any) {
+        setLoading(false);
+      }
+    } else {
+      await Audio.requestPermissionsAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      setRecording(rec);
+    }
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#0f0f0f' }}>
-      <View style={styles.screen}>
-        <Text style={styles.emoji}>🎙</Text>
-        <Text style={styles.h1}>Checkup vocal</Text>
-        <Text style={styles.muted}>Cette section arrive bientôt. Tu pourras parler à VITAL et recevoir une analyse personnalisée.</Text>
-      </View>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.chatScroll}
+          contentContainerStyle={styles.chatContent}
+          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+        >
+          {messages.map((m, i) => (
+            <View key={i} style={[styles.bubble, m.role === 'user' ? styles.bubbleUser : styles.bubbleCoach]}>
+              <Text style={[styles.bubbleText, m.role === 'user' && styles.bubbleTextUser]}>{m.text}</Text>
+            </View>
+          ))}
+          {loading && (
+            <View style={styles.bubbleCoach}>
+              <Text style={styles.bubbleText}>...</Text>
+            </View>
+          )}
+        </ScrollView>
+
+        <View style={styles.chatBar}>
+          <TextInput
+            style={styles.chatInput}
+            value={input}
+            onChangeText={setInput}
+            placeholder="Répondre..."
+            placeholderTextColor="#555"
+            onSubmitEditing={() => sendText(input)}
+            returnKeyType="send"
+          />
+          <Pressable style={[styles.chatSend, recording && styles.chatSendRed]} onPress={recording ? toggleVoice : input.trim() ? () => sendText(input) : toggleVoice}>
+            <Text style={styles.chatSendIcon}>{recording ? '⏹' : input.trim() ? '↑' : '🎙'}</Text>
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -157,6 +277,20 @@ const styles = StyleSheet.create({
   cardValue: { fontSize: 24, fontWeight: '800', color: '#fff' },
   cardUnit: { fontSize: 14, fontWeight: '400', color: '#555' },
   cardLabel: { fontSize: 12, color: '#555' },
+
+  // Chat
+  chatScroll: { flex: 1 },
+  chatContent: { padding: 16, gap: 12, paddingBottom: 8 },
+  bubble: { maxWidth: '80%', borderRadius: 16, padding: 14 },
+  bubbleCoach: { backgroundColor: '#1a1a1a', alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
+  bubbleUser: { backgroundColor: '#6366f1', alignSelf: 'flex-end', borderBottomRightRadius: 4 },
+  bubbleText: { color: '#e2e8f0', fontSize: 15, lineHeight: 22 },
+  bubbleTextUser: { color: '#fff' },
+  chatBar: { flexDirection: 'row', padding: 12, gap: 8, borderTopWidth: 1, borderTopColor: '#1e1e1e', backgroundColor: '#0f0f0f' },
+  chatInput: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, color: '#fff', fontSize: 15 },
+  chatSend: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' },
+  chatSendRed: { backgroundColor: '#ef4444' },
+  chatSendIcon: { color: '#fff', fontSize: 18 },
 
   // Tab bar
   tabBar: { flexDirection: 'row', backgroundColor: '#111', borderTopWidth: 1, borderTopColor: '#1e1e1e', paddingBottom: 28, paddingTop: 12 },
