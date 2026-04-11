@@ -19,7 +19,6 @@ dependencies = [
 
 [project.scripts]
 vital-server = "backend.health_server:main"
-vital-nudge = "backend.nudge:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
