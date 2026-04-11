@@ -3,16 +3,17 @@
 ## Checklist
 
 ### Error handling at system boundaries
-- [ ] Database calls (`health_store.py`) — what happens if PostgreSQL is down?
-- [ ] Mistral API calls (`brain.py`, `voxtral.py`) — what happens if the API is unreachable or returns an error?
-- [ ] Tool execution (`_execute_tool`) — what happens if a tool raises an exception?
+- [ ] Thryve API calls (`thryve.py`) — what happens if Thryve QA is unreachable or returns 5xx?
+- [ ] Memory file I/O (`memory.py`) — what happens if the memory file is missing or unwritable?
+- [ ] Mistral API calls (`brain.py`, `coach.py`, `voxtral.py`) — what happens if the API is unreachable or returns an error?
+- [ ] Tool execution (`execute_tool`) — what happens if a tool raises an exception?
 - [ ] FastAPI endpoints — are HTTP errors returned with proper status codes?
 
 ### Data integrity
-- [ ] All 20 metrics are in `_DEFAULT_METRICS` and match `MetricType` Swift enum
-- [ ] `get_summary()`, `get_trend()`, `get_correlation()`, `compare_periods()` handle empty results
-- [ ] No division by zero in `get_trend()` or `get_correlation()`
-- [ ] SQL queries are parameterized (no injection risk)
+- [ ] Memory sections (`Baselines`, `Events`, `Protocols`, `Context`) are parsed correctly and tolerate missing sections
+- [ ] Baseline math (`upsert_baseline`, z-score in `nudge.py`) handles empty/short series without division by zero
+- [ ] `get_trend()`, `get_correlation()`, `compare_periods()` handle empty Thryve results
+- [ ] Dashboard delta math (`_compute_delta_pct`) returns 0.0 when no baseline exists (no NaN, no crash)
 
 ### Code quality
 - [ ] No unused imports
@@ -22,7 +23,8 @@
 - [ ] Docstrings on public functions
 
 ### LLM tool use
-- [ ] All 6 tools defined in `TOOLS` list match `_execute_tool()` dispatch
+- [ ] All 9 tools defined in `TOOLS` list match `execute_tool()` dispatch (`brain.py`)
+- [ ] `read_memory` / `append_memory` round-trip through `memory.py` (not direct file I/O)
 - [ ] Tool descriptions are clear enough for the LLM to choose correctly
 - [ ] Tool parameter types match what the functions expect
 - [ ] `book_consultation` is clearly simulated (not real booking)

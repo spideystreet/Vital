@@ -1,3 +1,5 @@
+> **⚠️ SUPERSEDED (2026-04-11).** Reflects the pre-pivot weekly-checkup build. Current UI scope: `HANDOFF.md` — dashboard + morning brief + chat + memory panel + silent notification toasts.
+
 # Designer Checklist
 
 ## Bear Mascot

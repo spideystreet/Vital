@@ -1,3 +1,5 @@
+> **⚠️ SUPERSEDED (2026-04-11).** This plan describes the pre-pivot reactive weekly-checkup product. The current implementation plan is `docs/superpowers/plans/2026-04-11-proactive-coach-pivot.md`. Team-facing handoff: `HANDOFF.md`. Kept as historical record only.
+
 # Plan — Hackathon Alan x Mistral (11 avril 2026)
 
 ## Le problème

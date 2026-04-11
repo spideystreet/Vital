@@ -2,14 +2,14 @@
 
 ## What is this
 
-A vocal health checkup for stress and burnout prevention that:
-1. Reads health data from wearables via Thryve API (20 metrics)
-2. Uses Mistral Small 4 LLM with 6 tools for conversational analysis
-3. Crosses subjective well-being (voice) with objective biometrics to detect burnout
-4. Runs a **weekly vocal checkup ritual** (3 structured questions × 7-day biometric trends → score + action). See `wiki/concepts/weekly-vocal-checkup.md`.
-5. Sends **biometric-triggered daily nudges** (only when stress signals warrant) via `vital-nudge`.
-6. Tracks engagement via **Alan Play berries** — verifiable rewards only (`backend/berries.py`).
-7. Web app (frontend/) with Python/FastAPI backend
+A **proactive life coach** based on wearable health data that:
+1. Reads health data from wearables via Thryve API (20 metrics, QA environment)
+2. Uses Mistral Small LLM with **9 tools** for conversational analysis + persistent memory
+3. Keeps a **per-user persistent memory** (Baselines, Events, Protocols, Context) as append-only markdown — the Openclaw / Hermes agent pattern — so insights are grounded in the user's own history
+4. Runs a **daily morning brief** with diagnosis + memory callback + adaptive protocol + one question. See `backend/coach.py`.
+5. Exposes a **stats dashboard + chat-with-your-data** surface: each stat shows delta vs personal baseline plus an LLM insight phrase. Tap a stat to open the chat with that context pre-loaded.
+6. Sends **memory-driven notifications** (silent, no TTS) when a biometric deviates ≥2σ from the user's baseline, with messages that reference past events. See `backend/nudge.py`.
+7. Web app (frontend/) with Python/FastAPI backend. Three surfaces share one brain and one memory spine.
 
 ## Architecture
 
@@ -18,40 +18,53 @@ Browser (mic + UI) → frontend/ (web app)
                           ↓
                     FastAPI backend (Python)
                           ↓
-              Mistral LLM + Voxtral STT/TTS → SSE stream → frontend
+  coach.py (brief + dashboard) ─┐
+  brain.py (chat + 9 tools)     ├─► memory.py (data/memory/<endUserId>.md)
+  nudge.py (z-score deviation)  ─┘          ▲
+                          ↓                  │
+              Mistral LLM + Voxtral STT/TTS  │
+                          ↓                  │
+              thryve.py ──► Thryve QA API ───┘
                           ↓
-              health_store.py → PostgreSQL (Thryve + HealthKit data)
+              SSE stream → frontend (brief / dashboard / notifications / chat)
 ```
 
 ## Project layout
 
 ```
 backend/                     # Python backend
-├── config.py                # Env vars, constants, model IDs
+├── config.py                # Env vars, constants, model IDs, Thryve QA URL
 ├── voxtral.py               # STT transcription + streaming TTS
-├── brain.py                 # System prompt, health context, LLM tool use
-├── health_server.py         # FastAPI endpoint
-├── health_store.py          # PostgreSQL storage and queries
-├── nudge.py                 # Daily biometric-triggered nudge detector
-├── berries.py               # Alan Play berries ledger (verifiable rewards)
+├── brain.py                 # System prompt, health context, 9-tool function calling
+├── coach.py                 # Morning brief + dashboard insights orchestrator
+├── memory.py                # Persistent markdown memory (Baselines/Events/Protocols/Context)
+├── burnout.py               # Burnout score from Thryve analytics (+ fallback)
+├── guardrail.py             # Nebius Llama Guard safety check
+├── thryve.py                # Thryve Health API client (async, two-header auth)
+├── health_server.py         # FastAPI endpoints + SSE streaming
+├── nudge.py                 # Memory-driven z-score deviation detector
 ├── thryve_mcp.py            # Thryve MCP server (dev tooling)
-└── seed_data.py             # Test data generator (4 scenarios)
+└── seed_data.py             # Test data generator
+data/memory/                 # Per-user markdown memory files (gitignored except demo profile)
 frontend/                    # Web app (team builds during hackathon)
 tests/                       # Python tests
 ```
 
 ## LLM Tool Use
 
-brain.py exposes 6 tools to Mistral Small 4 via function calling:
+brain.py exposes 9 tools to Mistral Small via function calling:
 
 | Tool | Purpose |
 |------|---------|
-| `get_health_summary(hours)` | Aggregated metrics over a time window |
-| `get_latest_readings(metric, limit)` | N most recent raw readings |
-| `get_health_trend(metric, days)` | Trend comparison (last 24h vs previous days) |
-| `compare_periods(metric, ...)` | Compare two time periods |
+| `get_user_profile()` | Patient age, info |
+| `get_vitals(days)` | HRV, resting HR, sleep, HR-during-sleep |
+| `get_blood_panel(days)` | Glucose, HbA1c + simulated lab values |
+| `get_burnout_score()` | Burnout score from Thryve analytics |
+| `get_trend(metric, days)` | Trend comparison (recent vs baseline) |
 | `get_correlation(metric_a, metric_b, days)` | Pearson correlation between two metrics |
-| `book_consultation(specialty, urgency, reason)` | Book a health professional (simulated for demo) |
+| `book_consultation(specialty, urgency, reason)` | Book a health professional (simulated) |
+| `read_memory(section)` | Read Baselines / Events / Protocols / Context from persistent memory |
+| `append_memory(section, entry)` | Append user-stated context discovered mid-conversation |
 
 ## Health Metrics (20)
 
@@ -67,21 +80,18 @@ brain.py exposes 6 tools to Mistral Small 4 via function calling:
 |-------|--------|
 | `tts` | voxtral.py TTS |
 | `stt` | voxtral.py STT |
-| `brain` | brain.py, system prompt, LLM |
-| `server` | health_server.py, API endpoints |
-| `store` | health_store.py, PostgreSQL |
+| `brain` | brain.py, system prompt, LLM, tool calling |
+| `coach` | coach.py, morning brief, dashboard insights |
+| `memory` | memory.py, persistent memory sections |
+| `server` | health_server.py, API endpoints, SSE |
 | `config` | config.py, env vars |
-| `nudge` | nudge.py, daily biometric nudge detection |
-| `berries` | berries.py, Alan Play rewards ledger |
+| `nudge` | nudge.py, memory-driven notification detector |
 | `front` | frontend/ web app |
 
 ## Commands
 
 ```bash
-# Run the daily biometric nudge detector (cron / Shortcut hook)
-uv run vital-nudge
-
-# Run the health data server
+# Run the health data server (exposes /docs OpenAPI UI)
 uv run vital-server
 
 # Run tests
