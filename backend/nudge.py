@@ -8,11 +8,12 @@ compliance.
 
 from dataclasses import dataclass
 
-from backend.health_store import get_summary, get_trend
+from backend.burnout import compute_burnout
+from backend.thryve import ThryveClient
 
 # Thresholds — keep aligned with brain.py system prompt
 HRV_DROP_PCT = -15.0
-SLEEP_MIN_HOURS = 6.0
+SLEEP_MIN_QUALITY = 60.0
 RESTING_HR_MAX = 80.0
 
 
@@ -30,23 +31,32 @@ class NudgeDecision:
         }
 
 
-def evaluate() -> NudgeDecision:
-    """Decide whether to send a daily nudge based on the last 24h of data."""
+async def evaluate(patient_token: str) -> NudgeDecision:
+    """Decide whether to send a daily nudge based on recent Thryve data."""
+    client = ThryveClient()
+    metrics = await client.get_burnout_metrics(patient_token, days=7)
     reasons: list[str] = []
 
-    summary = get_summary(24)
+    # --- HRV drop check ---
+    hrv = metrics.get("hrv")
+    if hrv and hrv["baseline_7d"] and hrv["latest"] is not None:
+        baseline = hrv["baseline_7d"]
+        if baseline > 0:
+            change_pct = ((hrv["latest"] - baseline) / baseline) * 100
+            if change_pct <= HRV_DROP_PCT:
+                reasons.append(f"HRV en baisse ({change_pct:.0f}%)")
 
-    sleep = summary.get("sleep")
-    if sleep and sleep["latest"] < SLEEP_MIN_HOURS:
-        reasons.append(f"sommeil court ({sleep['latest']}h)")
+    # --- Sleep quality check ---
+    sleep = metrics.get("sleep_quality")
+    if sleep and sleep["latest"] is not None:
+        if sleep["latest"] < SLEEP_MIN_QUALITY:
+            reasons.append(f"Qualité de sommeil faible ({sleep['latest']:.0f}/100)")
 
-    resting = summary.get("resting_hr")
-    if resting and resting["avg"] > RESTING_HR_MAX:
-        reasons.append(f"FC repos élevée ({resting['avg']} bpm)")
-
-    hrv_trend = get_trend("hrv", days=7)
-    if hrv_trend.get("change_pct") is not None and hrv_trend["change_pct"] <= HRV_DROP_PCT:
-        reasons.append(f"HRV en baisse ({hrv_trend['change_pct']}%)")
+    # --- Resting HR check ---
+    rhr = metrics.get("resting_hr")
+    if rhr and rhr["latest"] is not None:
+        if rhr["latest"] > RESTING_HR_MAX:
+            reasons.append(f"FC repos élevée ({rhr['latest']:.0f} bpm)")
 
     if not reasons:
         return NudgeDecision(
@@ -55,15 +65,25 @@ def evaluate() -> NudgeDecision:
             headline="Tout est dans le vert, pas besoin de check aujourd'hui.",
         )
 
-    headline = "V.I.T.A.L a remarqué un truc, 30 secondes ?"
+    # Compute burnout score for context
+    burnout = compute_burnout(metrics)
+
+    headline = f"V.I.T.A.L a remarqué un truc (score {burnout.score}), 30 secondes ?"
     return NudgeDecision(should_nudge=True, reasons=reasons, headline=headline)
 
 
 def main() -> None:
     """CLI entry: print the nudge decision as JSON for cron / shortcut hooks."""
+    import asyncio
     import json
+    import os
 
-    decision = evaluate()
+    token = os.environ.get("THRYVE_PATIENT_TOKEN", "")
+    if not token:
+        print('{"error": "THRYVE_PATIENT_TOKEN not set"}')
+        return
+
+    decision = asyncio.run(evaluate(token))
     print(json.dumps(decision.to_dict(), ensure_ascii=False))
 
 

@@ -8,21 +8,26 @@ load_dotenv()
 
 # --- API Keys ---
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
+NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+
+# --- Thryve ---
+THRYVE_USER = os.environ.get("THRYVE_USER", "")
+THRYVE_PASSWORD = os.environ.get("THRYVE_PASSWORD", "")
+THRYVE_APP_ID = os.environ.get("THRYVE_APP_ID", "")
+THRYVE_APP_SECRET = os.environ.get("THRYVE_APP_SECRET", "")
+THRYVE_BASE_URL = "https://api.thryve.de/v5"
 
 # --- Models ---
-STT_MODEL = "voxtral-mini-transcribe-2507"
+STT_MODEL = "voxtral-mini-latest"
 REALTIME_STT_MODEL = "voxtral-mini-transcribe-realtime-2602"
-LLM_MODEL = "mistral-small-latest"
+LLM_MODEL = "mistral-small-3"
 TTS_MODEL = "voxtral-mini-tts-2603"
 
 # --- Audio ---
 SAMPLE_RATE = 16_000  # Voxtral STT requirement
 TTS_SAMPLE_RATE = 24_000  # Voxtral TTS output
-SILENCE_THRESHOLD = 500
-SILENCE_DURATION = 1.5  # seconds
 STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "fr")
-MAX_RECORD_SECONDS = 30
-AUDIO_OUTPUT_DEVICE = os.environ.get("AUDIO_OUTPUT_DEVICE")
 TTS_VOICE_ID = os.environ.get("TTS_VOICE_ID", "")
 
 # --- Demo voice IDs (Voxtral French) ---
@@ -32,6 +37,9 @@ DEMO_ASSISTANT_VOICE = "5a271406-039d-46fe-835b-fbbb00eaf08d"  # Marie - Neutral
 # --- Health Server ---
 HEALTH_SERVER_HOST = os.environ.get("VITAL_HOST", "0.0.0.0")
 HEALTH_SERVER_PORT = int(os.environ.get("VITAL_PORT", "8420"))
+
+# --- External Services ---
+NEBIUS_BASE_URL = "https://api.studio.nebius.com/v1"
 
 # --- PostgreSQL ---
 POSTGRES_USER = os.environ.get("POSTGRES_USER", "")
@@ -43,9 +51,3 @@ DATABASE_URL = (
     f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
     f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 )
-
-# --- UI ---
-ORANGE = "#ff7000"
-ORANGE_DIM = "#cc5500"
-ORANGE_DARK = "#884400"
-REFRESH_FPS = 15

@@ -11,11 +11,9 @@ from collections.abc import Iterator
 
 import httpx
 import numpy as np
-import sounddevice as sd
 from mistralai.client import Mistral
 
 from backend.config import (
-    AUDIO_OUTPUT_DEVICE,
     MISTRAL_API_KEY,
     STT_LANGUAGE,
     STT_MODEL,
@@ -33,91 +31,6 @@ def transcribe(client: Mistral, audio_data: bytes) -> str:
         language=STT_LANGUAGE,
     )
     return result.text.strip()
-
-
-def speak_text(text: str, voice_id: str | None = None) -> None:
-    """Speak a text string via TTS, streaming audio as chunks arrive."""
-    q: queue.Queue[bytes | None] = queue.Queue()
-
-    def _produce():
-        _stream_tts_to_queue(text, q, voice_id=voice_id)
-        q.put(None)
-
-    t = threading.Thread(target=_produce, daemon=True)
-    t.start()
-
-    device = int(AUDIO_OUTPUT_DEVICE) if AUDIO_OUTPUT_DEVICE else None
-    with sd.OutputStream(
-        samplerate=TTS_SAMPLE_RATE,
-        channels=1,
-        dtype="float32",
-        device=device,
-    ) as stream:
-        first = True
-        while True:
-            chunk = q.get()
-            if chunk is None:
-                break
-            if first:
-                silence = np.zeros(int(TTS_SAMPLE_RATE * 0.1), dtype=np.float32)
-                stream.write(silence)
-                first = False
-            stream.write(np.frombuffer(chunk, dtype=np.float32))
-    t.join()
-
-
-# Shared audio level for reactive waveform (written by player, read by viz)
-audio_level: float = 0.0
-
-
-def speak_streaming(
-    client: Mistral, token_stream: Iterator[str], voice_id: str | None = None
-) -> Iterator[str]:
-    """Stream TTS playback while yielding tokens for UI display.
-
-    Buffers tokens into sentences, sends each to TTS in background threads,
-    plays audio concurrently. Yields each token so caller can update the UI.
-    """
-    global audio_level  # noqa: PLW0603
-    audio_q: queue.Queue[bytes | None] = queue.Queue()
-    sentence_q: queue.Queue[str | None] = queue.Queue()
-
-    def _player():
-        global audio_level  # noqa: PLW0603
-        device = int(AUDIO_OUTPUT_DEVICE) if AUDIO_OUTPUT_DEVICE else None
-        with sd.OutputStream(
-            samplerate=TTS_SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-            device=device,
-        ) as stream:
-            while True:
-                data = audio_q.get()
-                if data is None:
-                    audio_level = 0.0
-                    break
-                samples = np.frombuffer(data, dtype=np.float32)
-                rms = float(np.sqrt(np.mean(samples**2)))
-                # Smooth: fast attack, slow decay
-                audio_level = max(rms, audio_level * 0.85)
-                stream.write(samples)
-
-    def _tts_worker():
-        while True:
-            text = sentence_q.get()
-            if text is None:
-                break
-            _stream_tts_to_queue(text, audio_q, voice_id=voice_id)
-        audio_q.put(None)
-
-    player_t = threading.Thread(target=_player, daemon=True)
-    tts_t = threading.Thread(target=_tts_worker, daemon=True)
-    player_t.start()
-    tts_t.start()
-
-    yield from _buffer_sentences(token_stream, sentence_q)
-    tts_t.join()
-    player_t.join()
 
 
 _SENTENCE_END = re.compile(r"[.!?:]\s")
@@ -219,19 +132,10 @@ def stream_voice_events(
     prod_t.join(timeout=5)
 
 
-# Back-compat alias for the older audio-only pipeline
-def stream_tts_pcm_from_token_stream(
-    token_stream: Iterator[str], voice_id: str | None = None
-) -> Iterator[tuple[str, bytes]]:
-    for kind, payload in stream_voice_events(token_stream, voice_id=voice_id):
-        if kind == "audio":
-            yield (kind, payload)
-
-
 def synthesize_wav_from_stream(
     token_stream: Iterator[str], voice_id: str | None = None
 ) -> tuple[bytes, str]:
-    """Pipeline: LLM tokens → sentence-based TTS → concatenated WAV bytes.
+    """Pipeline: LLM tokens -> sentence-based TTS -> concatenated WAV bytes.
 
     Starts TTS on each complete sentence while the LLM is still streaming.
     Returns the full WAV blob and the full assistant text.
