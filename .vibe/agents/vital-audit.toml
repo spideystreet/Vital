@@ -1,8 +1,8 @@
 active_model = "devstral-2"
-system_prompt_id = "vital"
+system_prompt_id = "vital-audit"
 
 [tools.bash]
-permission = "always"
+permission = "ask"
 
 [tools.read_file]
 permission = "always"

@@ -1,5 +1,5 @@
 active_model = "devstral-2"
-system_prompt_id = "vital"
+system_prompt_id = "vital-tests"
 
 [tools.bash]
 permission = "always"
