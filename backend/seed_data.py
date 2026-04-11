@@ -3,6 +3,98 @@
 import random
 from datetime import UTC, datetime, timedelta
 
+# ----------------------------------------------------------------------
+# Demo-mode synthetic vitals
+# ----------------------------------------------------------------------
+# Tuned to match the seeded memory baselines in
+# data/memory/2bfaa7e6f9455ceafa0a59fd5b80496c.md so the dashboard's
+# delta_pct math lines up with the morning brief narrative.
+# ----------------------------------------------------------------------
+
+# (mean, stddev) pulled directly from the Baselines section.
+_DEMO_BASELINES: dict[str, tuple[float, float]] = {
+    "hrv": (55.2, 4.8),
+    "resting_hr": (58.7, 3.4),
+    "sleep_quality": (76.3, 6.2),
+    "heart_rate_sleep": (52.0, 4.0),
+}
+
+# Last-day values — deliberately offset from baseline so the dashboard
+# reads a non-zero delta and the brief has a concrete signal to talk about.
+# None of these cross the 2σ nudge threshold on their own (that's what
+# /dev/fire-notification is for — the stage driver controls that trigger).
+_DEMO_LATEST: dict[str, float] = {
+    "hrv": 48.0,          # ~-1.5σ — "14% below your 14-day baseline"
+    "resting_hr": 64.0,   # ~+1.6σ — elevated
+    "sleep_quality": 68.0,  # ~-1.3σ — moderate drop
+    "heart_rate_sleep": 55.0,
+}
+
+
+def _demo_series(metric: str, days: int) -> list[dict]:
+    """Build a `days`-long list of day/value dicts centered on the baseline.
+
+    Uses a fixed random seed so every call returns the same series (stage
+    repeatability). The final day is forced to the `_DEMO_LATEST` value.
+    """
+    mean, stddev = _DEMO_BASELINES[metric]
+    rng = random.Random(hash(metric) & 0xFFFFFFFF)
+    today = datetime.now().date()
+    out: list[dict] = []
+    for i in range(days):
+        day = today - timedelta(days=days - 1 - i)
+        if i == days - 1:
+            value = _DEMO_LATEST[metric]
+        else:
+            value = round(rng.gauss(mean, stddev * 0.6), 1)
+        out.append({"date": day.isoformat(), "value": value, "unit": None})
+    return out
+
+
+def build_demo_vitals(days: int = 14) -> dict:
+    """Return the `get_vitals` shape for DEMO_MODE — one entry per metric."""
+    return {metric: _demo_series(metric, days) for metric in _DEMO_BASELINES}
+
+
+def build_demo_blood_panel() -> dict:
+    """Return the `get_blood_panel` shape for DEMO_MODE with plausible labs."""
+    return {
+        "blood_glucose": [
+            {"date": None, "value": 94, "unit": "mg/dL"},
+            {"date": None, "value": 98, "unit": "mg/dL"},
+            {"date": None, "value": 91, "unit": "mg/dL"},
+        ],
+        "hba1c": [{"date": None, "value": 5.3, "unit": "%"}],
+        "ferritin": [{"value": 85, "unit": "ng/mL", "simulated": True}],
+        "cortisol": [{"value": 14.2, "unit": "ug/dL", "simulated": True}],
+        "vitamin_d": [{"value": 32, "unit": "ng/mL", "simulated": True}],
+    }
+
+
+def build_demo_burnout_metrics(days: int = 7) -> dict:
+    """Return the `get_burnout_metrics` shape for DEMO_MODE."""
+    vitals = {metric: _demo_series(metric, days) for metric in _DEMO_BASELINES}
+    # Thryve analytic scores — low-moderate stress persona.
+    vitals["stress"] = [
+        {"date": None, "value": 32, "unit": "/100"},
+        {"date": None, "value": 28, "unit": "/100"},
+        {"date": None, "value": 41, "unit": "/100"},
+    ]
+    vitals["mental_health_risk"] = [{"date": None, "value": 15, "unit": "/100"}]
+    vitals["sick_leave_prediction"] = [{"date": None, "value": 5, "unit": "/100"}]
+
+    result: dict = {}
+    for name, values in vitals.items():
+        numeric = [v["value"] for v in values if isinstance(v.get("value"), (int, float))]
+        baseline = sum(numeric) / len(numeric) if numeric else None
+        result[name] = {
+            "values": values,
+            "baseline_7d": round(baseline, 2) if baseline is not None else None,
+            "latest": numeric[-1] if numeric else None,
+            "count": len(numeric),
+        }
+    return result
+
 SCENARIOS = {
     "healthy": {
         "description": "Healthy active person, good sleep, low stress",

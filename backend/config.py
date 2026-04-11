@@ -18,6 +18,12 @@ THRYVE_APP_ID = os.environ.get("THRYVE_APP_ID", "")
 THRYVE_APP_SECRET = os.environ.get("THRYVE_APP_SECRET", "")
 THRYVE_BASE_URL = os.environ.get("THRYVE_BASE_URL", "https://api-qa.thryve.de/v5")
 
+# --- Demo mode ---
+# When DEMO_MODE=1, ThryveClient returns synthetic vitals tuned to the seeded
+# memory baselines instead of hitting the Thryve QA API. Used on stage because
+# the QA catalog profiles are connected but contain no time-series data.
+DEMO_MODE = os.environ.get("DEMO_MODE", "0").lower() in ("1", "true", "yes")
+
 # --- Models ---
 STT_MODEL = "voxtral-mini-latest"
 REALTIME_STT_MODEL = "voxtral-mini-transcribe-realtime-2602"

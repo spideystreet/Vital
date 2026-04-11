@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import httpx
 
 from backend.config import (
+    DEMO_MODE,
     THRYVE_APP_ID,
     THRYVE_APP_SECRET,
     THRYVE_BASE_URL,
@@ -131,8 +132,15 @@ class ThryveClient:
         """Fetch HRV, resting HR, sleep quality, and HR-during-sleep for N days.
 
         Returns a dict keyed by metric name, each containing a list of
-        daily values with date and value.
+        daily values with date and value. When DEMO_MODE is on, returns
+        synthetic values tuned to the seeded memory baselines instead of
+        hitting Thryve QA (the QA profiles are empty on stage).
         """
+        if DEMO_MODE:
+            from backend.seed_data import build_demo_vitals
+
+            return build_demo_vitals(days=days)
+
         codes = [
             METRIC_CODES["hrv"],
             METRIC_CODES["resting_hr"],
@@ -152,6 +160,11 @@ class ThryveClient:
         Adds simulated ferritin, cortisol, and vitamin D as static demo
         values (these are not available from wearables).
         """
+        if DEMO_MODE:
+            from backend.seed_data import build_demo_blood_panel
+
+            return build_demo_blood_panel()
+
         codes = [METRIC_CODES["blood_glucose"], METRIC_CODES["hba1c"]]
         start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         end = datetime.now().strftime("%Y-%m-%d")
@@ -172,6 +185,11 @@ class ThryveClient:
         sick leave prediction) and raw biometrics (HRV, sleep, resting HR)
         for context. Returns raw values plus a 7-day baseline average.
         """
+        if DEMO_MODE:
+            from backend.seed_data import build_demo_burnout_metrics
+
+            return build_demo_burnout_metrics(days=days)
+
         codes = [
             # Thryve analytics (computed scores)
             METRIC_CODES["stress"],
