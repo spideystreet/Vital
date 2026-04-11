@@ -27,8 +27,8 @@ DEMO_MODE = os.environ.get("DEMO_MODE", "0").lower() in ("1", "true", "yes")
 # --- Models ---
 STT_MODEL = "voxtral-mini-latest"
 REALTIME_STT_MODEL = "voxtral-mini-transcribe-realtime-2602"
-LLM_MODEL = "mistral-small-3"
-TTS_MODEL = "voxtral-mini-tts-2603"
+LLM_MODEL = "mistral-small-latest"
+TTS_MODEL = "voxtral-mini-tts-latest"
 
 # --- Audio ---
 SAMPLE_RATE = 16_000  # Voxtral STT requirement

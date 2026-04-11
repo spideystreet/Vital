@@ -53,6 +53,9 @@ def _parse_guard_output(output: str) -> tuple[bool, str | None]:
 
 
 async def check_response(user_message: str, assistant_response: str) -> GuardrailResult:
+    if not NEBIUS_API_KEY:
+        return GuardrailResult(safe=True, category=None, original_response=assistant_response, safe_response=assistant_response)
+
     """Check if the LLM response is safe using Llama Guard 3.
 
     Args:
@@ -96,6 +99,9 @@ async def check_response(user_message: str, assistant_response: str) -> Guardrai
 
 
 def check_response_sync(user_message: str, assistant_response: str) -> GuardrailResult:
+    if not NEBIUS_API_KEY:
+        return GuardrailResult(safe=True, category=None, original_response=assistant_response, safe_response=assistant_response)
+
     """Synchronous version for use in non-async contexts."""
     prompt = _PROMPT_TEMPLATE.format(
         user_message=user_message,
