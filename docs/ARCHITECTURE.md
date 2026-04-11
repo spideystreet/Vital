@@ -155,7 +155,7 @@ Design choice: silent. No TTS on notifications. An interrupting voice is annoyin
 | Component | Technology |
 |---|---|
 | Backend | Python 3.12, FastAPI, `httpx.AsyncClient`, `uvicorn` |
-| LLM | Mistral Small 3 (`mistral-small-latest`) with function calling |
+| LLM | Mistral Small (latest — `mistral-small-latest`) with function calling |
 | STT | Voxtral (`voxtral-mini-transcribe-2507`) |
 | TTS | Voxtral (`voxtral-mini-tts-2603`) via raw SSE |
 | Health data | Thryve QA (`api-qa.thryve.de/v5`), two-header auth |
