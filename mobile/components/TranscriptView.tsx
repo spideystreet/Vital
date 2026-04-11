@@ -1,4 +1,5 @@
 import { ScrollView, StyleSheet, Text } from 'react-native';
+import { fontSans } from '../constants/fonts';
 
 interface Props {
   text: string;
@@ -21,5 +22,5 @@ const styles = StyleSheet.create({
     padding: 16,
     maxHeight: 300,
   },
-  text: { color: '#e2e8f0', fontSize: 16, lineHeight: 26 },
+  text: { fontFamily: fontSans, color: '#e2e8f0', fontSize: 16, lineHeight: 26 },
 });

@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { fontSans } from '../constants/fonts';
 
 interface Props {
   label: string;
@@ -25,6 +26,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: '45%',
   },
-  label: { color: '#888', fontSize: 12, marginBottom: 6 },
-  value: { color: '#fff', fontSize: 24, fontWeight: '700' },
+  label: { fontFamily: fontSans, color: '#888', fontSize: 12, marginBottom: 6 },
+  value: { fontFamily: fontSans, color: '#fff', fontSize: 24, fontWeight: '700' },
 });

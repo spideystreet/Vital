@@ -30,13 +30,13 @@
     },
     "scheme": "vital",
     "plugins": [
-      "expo-router",
       "expo-notifications",
-      ["expo-audio", { "microphonePermission": "VITAL a besoin de votre micro pour le checkup vocal." }]
-    ],
-    "plugins": [
-      "expo-audio",
-      "expo-router"
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "VITAL a besoin de votre micro pour le checkup vocal."
+        }
+      ]
     ]
   }
 }

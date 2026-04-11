@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text } from 'react-native';
+import { fontSans } from '../constants/fonts';
 
 type State = 'idle' | 'recording' | 'transcribing';
 
@@ -34,5 +35,5 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   btnRed: { backgroundColor: '#ef4444' },
-  label: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  label: { fontFamily: fontSans, color: '#fff', fontWeight: '700', fontSize: 16 },
 });

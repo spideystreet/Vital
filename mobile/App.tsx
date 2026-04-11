@@ -1,20 +1,29 @@
-import { useState, useRef, useEffect } from 'react';
-import { View, Text, Pressable, StyleSheet, ScrollView, SafeAreaView, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, Image, Pressable, StyleSheet, ScrollView, SafeAreaView, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Circle } from 'react-native-svg';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import { transcribeAudio } from './services/voxtral';
 import { coachApi } from './services/coachApi';
 import { API_BASE_URL } from './constants/config';
+import { fontSans } from './constants/fonts';
 
+const META_ICON_SIZE = 15;
 const PATIENT_ID = 'patient-1';
 
-// ─── Splash ───────────────────────────────────────────────────────────────────
+// ─── Splash (OnboardingIntro) ─────────────────────────────────────────────────
 
 function OnboardingIntro({ onDone }: { onDone: () => void }) {
   return (
     <SafeAreaView style={styles.splashScreen}>
       <View style={styles.splashTop}>
-        <Text style={styles.splashLogo}>VITAL</Text>
+        <Image
+          source={Platform.OS === 'web' ? { uri: '/Vital_logo.svg' } : require('./assets/vital_logo.png')}
+          style={styles.onboardingLogo}
+          resizeMode="contain"
+          accessibilityLabel="VITAL"
+        />
         <Text style={styles.splashTagline}>
           Ton corps parle.{'\n'}On traduit.
         </Text>
@@ -24,8 +33,8 @@ function OnboardingIntro({ onDone }: { onDone: () => void }) {
       </View>
 
       <View style={styles.splashBottom}>
-        <Pressable style={({ pressed }) => [styles.splashBtn, pressed && { opacity: 0.85 }]} onPress={onDone}>
-          <Text style={styles.splashBtnText}>Commencer</Text>
+        <Pressable style={({ pressed }) => [styles.btn, pressed && { opacity: 0.85 }]} onPress={onDone}>
+          <Text style={styles.btnText}>Commencer</Text>
         </Pressable>
         <Text style={styles.splashLegal}>Tes données restent sur ton appareil.</Text>
       </View>
@@ -37,7 +46,6 @@ function OnboardingIntro({ onDone }: { onDone: () => void }) {
 
 type IntakeField = { key: string; label: string; icon: string; value: string | null };
 
-// Maps backend keys → display meta (only fields we want to show in the preview)
 const FIELD_META: Record<string, { label: string; icon: string }> = {
   age:        { label: 'Âge',    icon: '🎂' },
   sex:        { label: 'Sexe',   icon: '⚥'  },
@@ -58,10 +66,8 @@ function formatValue(key: string, value: string | number | null): string {
   return String(value);
 }
 
-// Backend returns nested categories: { session_id, categories: [{key, fields: [{key, value}]}] }
 function normalizeForm(data: any): IntakeField[] {
   const formSource = data?.form ?? data ?? {};
-  // Build a flat key→value map from the nested categories array
   const flat: Record<string, any> = {};
   if (Array.isArray(formSource?.categories)) {
     for (const cat of formSource.categories) {
@@ -169,7 +175,6 @@ function VoiceIntake({ onDone }: { onDone: (firstName: string) => void }) {
          `${filledCount}/${fields.length} informations recueillies`}
       </Text>
 
-      {/* Field preview */}
       <View style={styles.intakeGrid}>
         {fields.map((f) => (
           <View key={f.key} style={[styles.intakeField, f.value !== null && styles.intakeFieldFilled]}>
@@ -186,7 +191,6 @@ function VoiceIntake({ onDone }: { onDone: (firstName: string) => void }) {
         <Text style={styles.intakeTranscript}>« {transcript} »</Text>
       )}
 
-      {/* Hold-to-record button */}
       {!isProcessing && (
         <Pressable
           style={[styles.intakeMic, isRecording && styles.intakeMicActive]}
@@ -195,14 +199,14 @@ function VoiceIntake({ onDone }: { onDone: (firstName: string) => void }) {
         >
           {isRecording
             ? <ActivityIndicator color="#fff" size="small" />
-            : <Text style={styles.intakeMicIcon}>🎙</Text>}
+            : <Ionicons name="mic" size={36} color="#fff" />}
           <Text style={styles.intakeMicLabel}>
             {isRecording ? 'Relâche pour analyser' : 'Maintenir pour parler'}
           </Text>
         </Pressable>
       )}
 
-      {isProcessing && <ActivityIndicator color="#6366f1" size="large" />}
+      {isProcessing && <ActivityIndicator color="#111827" size="large" />}
 
       {phase === 'error' && (
         <Text style={styles.intakeError}>{errorMsg}</Text>
@@ -219,23 +223,108 @@ function VoiceIntake({ onDone }: { onDone: (firstName: string) => void }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
+const DASHBOARD_FIRST_NAME = 'Kylian';
+const DASHBOARD_UV_INDEX = 4;
+
+function formatDashboardHeaderDate(d: Date = new Date()): string {
+  const day = d.getDate();
+  const wd = d.toLocaleDateString('fr-FR', { weekday: 'short' })
+    .replace(/\.$/, '')
+    .trim();
+  return `${day} ${wd}`;
+}
+
+function formatSheetSectionDate(d: Date = new Date()): string {
+  return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
 const METRICS = [
-  { label: 'Sommeil', value: '5h12', unit: '', icon: '😴', alert: true },
-  { label: 'HRV', value: '42', unit: 'ms', icon: '💓', alert: false },
-  { label: 'Pas', value: '3 240', unit: '', icon: '👟', alert: false },
-  { label: 'SpO2', value: '97', unit: '%', icon: '🫁', alert: false },
-  { label: 'Stress', value: 'Élevé', unit: '', icon: '⚡', alert: true },
-  { label: 'Mindful', value: '0', unit: 'min', icon: '🧘', alert: false },
+  { label: 'Sommeil', value: '5h12', unit: '', icon: '😴', alert: true,  raw: 5.2  },
+  { label: 'HRV',     value: '42',   unit: 'ms', icon: '💓', alert: false, raw: 42   },
+  { label: 'Pas',     value: '3 240',unit: '', icon: '👟', alert: false, raw: 3240 },
+  { label: 'SpO2',    value: '97',   unit: '%', icon: '🫁', alert: false, raw: 97   },
+  { label: 'Stress',  value: 'Élevé',unit: '', icon: '⚡', alert: true,  raw: 3    },
+  { label: 'Mindful', value: '0',    unit: 'min', icon: '🧘', alert: false, raw: 0   },
 ];
 
-function MetricCard({ label, value, unit, icon, alert, onPress }: typeof METRICS[0] & { onPress?: () => void }) {
+type Segment = { text: string; hi?: boolean; icon?: React.ComponentProps<typeof Ionicons>['name'] };
+
+function buildInsightSegments(metrics: typeof METRICS): Segment[] {
+  const sleep   = metrics.find(m => m.label === 'Sommeil')!;
+  const hrv     = metrics.find(m => m.label === 'HRV')!;
+  const stress  = metrics.find(m => m.label === 'Stress')!;
+  const mindful = metrics.find(m => m.label === 'Mindful')!;
+
+  const segs: Segment[] = [];
+  const hi  = (text: string, icon?: Segment['icon']): Segment => ({ text, hi: true, icon });
+  const dim = (text: string): Segment => ({ text });
+
+  segs.push(dim('Tu as dormi '));
+  segs.push(hi(sleep.value, 'moon'));
+  segs.push(dim(' cette nuit, soit bien en dessous des 7 h recommandées.'));
+
+  if (hrv.raw < 50) {
+    segs.push(dim(' Ton '));
+    segs.push(hi('HRV'));
+    segs.push(dim(' est basse à '));
+    segs.push(hi(`${hrv.raw} ms`, 'heart'));
+    segs.push(dim(', signe que ton corps récupère mal.'));
+  }
+
+  if (mindful.raw === 0) {
+    segs.push(dim(' Tu n\'as pris aucun moment de '));
+    segs.push(hi('pleine conscience'));
+    segs.push(dim(' aujourd\'hui.'));
+  }
+
+  if (stress.raw >= 3) {
+    segs.push(dim(' Ton niveau de '));
+    segs.push(hi('stress'));
+    segs.push(dim(' est-il '));
+    segs.push(hi('élevé'));
+    segs.push(dim(' ?'));
+  }
+
+  return segs;
+}
+
+type RingCardProps = {
+  label: string;
+  value: string;
+  unit: string;
+  progress: number;
+  color: string;
+  trackColor?: string;
+  onPress?: () => void;
+};
+
+function RingCard({ label, value, unit, progress, color, trackColor = '#f0f0f5', onPress }: RingCardProps) {
+  const size = 80;
+  const stroke = 8;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const dash = Math.min(Math.max(progress, 0), 1) * circ;
+
   return (
-    <Pressable
-      style={({ pressed }) => [styles.card, alert && styles.cardAlert, pressed && { opacity: 0.7 }]}
-      onPress={onPress}
-    >
-      <Text style={styles.cardIcon}>{icon}</Text>
-      <Text style={styles.cardValue}>{value}<Text style={styles.cardUnit}>{unit ? ` ${unit}` : ''}</Text></Text>
+    <Pressable style={[styles.card, styles.ringCard]} onPress={onPress}>
+      <View style={styles.ringWrap}>
+        <Svg width={size} height={size}>
+          <Circle cx={size / 2} cy={size / 2} r={r} stroke={trackColor} strokeWidth={stroke} fill="none" />
+          <Circle
+            cx={size / 2} cy={size / 2} r={r}
+            stroke={color} strokeWidth={stroke} fill="none"
+            strokeDasharray={`${circ}`}
+            strokeDashoffset={circ - dash}
+            strokeLinecap="round"
+            rotation="-90"
+            origin={`${size / 2}, ${size / 2}`}
+          />
+        </Svg>
+        <View style={styles.ringCenter}>
+          <Text style={[styles.ringValue, { color }]}>{value}</Text>
+          {unit ? <Text style={styles.ringUnit}>{unit}</Text> : null}
+        </View>
+      </View>
       <Text style={styles.cardLabel}>{label}</Text>
       {onPress && <Text style={styles.cardHint}>Discuter →</Text>}
     </Pressable>
@@ -258,11 +347,7 @@ function UploadScreen({ onSuccess, onCancel }: { onSuccess: () => void; onCancel
       const form = new FormData();
       form.append('pdf', { uri: file.uri, name: file.name, type: 'application/pdf' } as any);
 
-      const res = await fetch(`${API_BASE_URL}/api/blood-panel/upload`, {
-        method: 'POST',
-        body: form,
-      });
-
+      const res = await fetch(`${API_BASE_URL}/api/blood-panel/upload`, { method: 'POST', body: form });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       onSuccess();
     } catch (e: any) {
@@ -274,7 +359,7 @@ function UploadScreen({ onSuccess, onCancel }: { onSuccess: () => void; onCancel
   if (status === 'loading') {
     return (
       <SafeAreaView style={styles.uploadScreen}>
-        <ActivityIndicator size="large" color="#6366f1" />
+        <ActivityIndicator size="large" color="#111827" />
         <Text style={styles.uploadLoadingText}>Analyse en cours…</Text>
         <Text style={styles.uploadMuted}>Ton bilan est envoyé au backend</Text>
       </SafeAreaView>
@@ -286,13 +371,11 @@ function UploadScreen({ onSuccess, onCancel }: { onSuccess: () => void; onCancel
       <Text style={styles.uploadEmoji}>🩸</Text>
       <Text style={styles.uploadTitle}>Bilan sanguin</Text>
       <Text style={styles.uploadMuted}>Importe ton PDF — VITAL l'analyse et le prend en compte dans tes données de santé.</Text>
-
       {status === 'error' && (
         <View style={styles.uploadError}>
           <Text style={styles.uploadErrorText}>Erreur : {errorMsg}</Text>
         </View>
       )}
-
       <Pressable style={styles.uploadBtn} onPress={pickAndUpload}>
         <Text style={styles.uploadBtnText}>📄 Choisir un PDF</Text>
       </Pressable>
@@ -306,6 +389,7 @@ function UploadScreen({ onSuccess, onCancel }: { onSuccess: () => void; onCancel
 function Dashboard({ onMetricPress, userName }: { onMetricPress: (label: string, value: string, unit: string) => void; userName?: string }) {
   const [bloodTestStatus, setBloodTestStatus] = useState<BloodTestStatus>('idle');
   const [showUpload, setShowUpload] = useState(false);
+  const segments = buildInsightSegments(METRICS);
 
   if (showUpload) {
     return (
@@ -317,35 +401,68 @@ function Dashboard({ onMetricPress, userName }: { onMetricPress: (label: string,
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#0f0f0f' }}>
-      <ScrollView contentContainerStyle={styles.dashContent}>
-        <Text style={styles.greeting}>Bonjour 👋</Text>
-        <View style={styles.insightBox}>
-          <Text style={styles.insightText}>😴 Vous avez mal dormi cette nuit. Votre HRV est en baisse et votre niveau de stress est élevé.</Text>
-        </View>
-        <Text style={styles.sectionTitle}>Aujourd'hui · <Text style={{ color: '#555', fontWeight: '400' }}>Appuie sur un KPI pour en discuter</Text></Text>
-        <View style={styles.grid}>
-          {METRICS.map((m) => (
-            <MetricCard key={m.label} {...m} onPress={() => onMetricPress(m.label, m.value, m.unit)} />
-          ))}
-        </View>
-
-        {bloodTestStatus === 'idle' && (
-          <Pressable style={styles.bloodTestBanner} onPress={() => setShowUpload(true)}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.bloodTestBannerTitle}>🩸 Déposez votre bilan sanguin</Text>
-              <Text style={styles.bloodTestBannerSub}>Enrichissez votre suivi avec vos données biologiques</Text>
+    <SafeAreaView style={styles.dashSafe}>
+      <View style={styles.dashHeader}>
+        <View style={styles.insightCard}>
+          <View style={styles.dashHeaderTopRow}>
+            <Text style={styles.dashGreetingInCard}>Bonne Matinée, {DASHBOARD_FIRST_NAME}</Text>
+            <View style={styles.dashHeaderMeta}>
+              <View style={styles.dashMetaLine}>
+                <Text style={styles.dashHeaderDate}>{formatDashboardHeaderDate()}</Text>
+                <Ionicons name="calendar" size={META_ICON_SIZE} color="rgba(255, 255, 255, 0.95)" />
+              </View>
+              <View style={styles.dashMetaLine}>
+                <Text style={styles.dashHeaderUv}>UV {DASHBOARD_UV_INDEX}</Text>
+                <Ionicons name="sunny" size={META_ICON_SIZE + 1} color="rgba(255, 255, 255, 0.85)" />
+              </View>
             </View>
-            <Text style={styles.bloodTestBannerArrow}>→</Text>
-          </Pressable>
-        )}
-
-        {bloodTestStatus === 'done' && (
-          <View style={styles.bloodTestDone}>
-            <Text style={styles.bloodTestDoneText}>✅ Bilan sanguin transmis</Text>
           </View>
-        )}
-      </ScrollView>
+          <Text style={styles.dashInCard}>
+            {segments.map((s, i) => (
+              <React.Fragment key={i}>
+                <Text style={s.hi ? styles.dashHiInCard : styles.dashDimInCard}>{s.text}</Text>
+                {s.icon && <Ionicons name={s.icon} size={13} color="#fff" style={{ marginLeft: 2 }} />}
+              </React.Fragment>
+            ))}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.dashSheet}>
+        <View style={styles.sheetHandleWrap}>
+          <View style={styles.sheetHandle} />
+        </View>
+        <ScrollView contentContainerStyle={styles.dashContent} showsVerticalScrollIndicator={false}>
+          <Text style={styles.sectionDateTitle}>{formatSheetSectionDate()}</Text>
+
+          <View style={[styles.ringRow, styles.ringRowTop]}>
+            <RingCard label="Sommeil" value="5h12"  unit=""   progress={5.2 / 8}       color="#6366f1" trackColor="#ede9fe" onPress={() => onMetricPress('Sommeil', '5h12', '')} />
+            <RingCard label="HRV"     value="42"     unit="ms" progress={42 / 80}        color="#ec4899" trackColor="#fce7f3" onPress={() => onMetricPress('HRV', '42', 'ms')} />
+            <RingCard label="Pas"     value="3 240"  unit=""   progress={3240 / 10000}   color="#10b981" trackColor="#d1fae5" onPress={() => onMetricPress('Pas', '3 240', '')} />
+          </View>
+          <View style={styles.ringRow}>
+            <RingCard label="SpO2"    value="97"    unit="%"   progress={97 / 100} color="#38bdf8" trackColor="#e0f2fe" onPress={() => onMetricPress('SpO2', '97', '%')} />
+            <RingCard label="Stress"  value="Élevé" unit=""    progress={3 / 3}    color="#f87171" trackColor="#fee2e2" onPress={() => onMetricPress('Stress', 'Élevé', '')} />
+            <RingCard label="Mindful" value="0"     unit="min" progress={0 / 30}   color="#a78bfa" trackColor="#ede9fe" onPress={() => onMetricPress('Mindful', '0', 'min')} />
+          </View>
+
+          {bloodTestStatus === 'idle' && (
+            <Pressable style={styles.bloodTestBanner} onPress={() => setShowUpload(true)}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bloodTestBannerTitle}>🩸 Déposez votre bilan sanguin</Text>
+                <Text style={styles.bloodTestBannerSub}>Enrichissez votre suivi avec vos données biologiques</Text>
+              </View>
+              <Text style={styles.bloodTestBannerArrow}>→</Text>
+            </Pressable>
+          )}
+
+          {bloodTestStatus === 'done' && (
+            <View style={styles.bloodTestDone}>
+              <Text style={styles.bloodTestDoneText}>✅ Bilan sanguin transmis</Text>
+            </View>
+          )}
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -359,6 +476,7 @@ function Chat({ pendingContext, onContextConsumed }: { pendingContext: string | 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [attachedContext, setAttachedContext] = useState<string | null>(null);
   const sessionRef = useRef<string | null>(null);
   const sendingRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
@@ -370,8 +488,6 @@ function Chat({ pendingContext, onContextConsumed }: { pendingContext: string | 
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
-
-  const [attachedContext, setAttachedContext] = useState<string | null>(null);
 
   useEffect(() => {
     if (!pendingContext) return;
@@ -440,8 +556,8 @@ function Chat({ pendingContext, onContextConsumed }: { pendingContext: string | 
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#0f0f0f' }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <SafeAreaView style={styles.chatSafe}>
+      <KeyboardAvoidingView style={styles.chatKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           ref={scrollRef}
           style={styles.chatScroll}
@@ -464,7 +580,7 @@ function Chat({ pendingContext, onContextConsumed }: { pendingContext: string | 
           )}
           {loading && (
             <View style={styles.bubbleCoach}>
-              <Text style={styles.bubbleText}>...</Text>
+              <Text style={styles.bubbleText}>…</Text>
             </View>
           )}
         </ScrollView>
@@ -487,12 +603,18 @@ function Chat({ pendingContext, onContextConsumed }: { pendingContext: string | 
             value={input}
             onChangeText={setInput}
             placeholder={attachedContext ? 'Ajoute ton message...' : 'Répondre...'}
-            placeholderTextColor="#555"
+            placeholderTextColor="#9ca3af"
             onSubmitEditing={() => sendText(input)}
             returnKeyType="send"
           />
           <Pressable style={[styles.chatSend, recording && styles.chatSendRed]} onPress={recording ? toggleVoice : input.trim() ? () => sendText(input) : toggleVoice}>
-            <Text style={styles.chatSendIcon}>{recording ? '⏹' : input.trim() ? '↑' : '🎙'}</Text>
+            {recording ? (
+              <Ionicons name="stop" size={22} color="#fff" />
+            ) : input.trim() ? (
+              <Ionicons name="arrow-up" size={22} color="#fff" />
+            ) : (
+              <Ionicons name="mic" size={22} color="#fff" />
+            )}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -508,12 +630,12 @@ function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void 
   return (
     <View style={styles.tabBar}>
       <Pressable style={styles.tab} onPress={() => onChange('dashboard')}>
-        <Text style={[styles.tabIcon, active === 'dashboard' && styles.tabActive]}>📊</Text>
-        <Text style={[styles.tabLabel, active === 'dashboard' && styles.tabActive]}>Dashboard</Text>
+        <Ionicons name="grid" size={24} color={active === 'dashboard' ? '#111827' : '#d1d5db'} />
+        <Text style={[styles.tabLabel, active === 'dashboard' && styles.tabLabelActive]}>Dashboard</Text>
       </Pressable>
       <Pressable style={styles.tab} onPress={() => onChange('chat')}>
-        <Text style={[styles.tabIcon, active === 'chat' && styles.tabActive]}>🎙</Text>
-        <Text style={[styles.tabLabel, active === 'chat' && styles.tabActive]}>Checkup</Text>
+        <Ionicons name="mic" size={24} color={active === 'chat' ? '#111827' : '#d1d5db'} />
+        <Text style={[styles.tabLabel, active === 'chat' && styles.tabLabelActive]}>Assistant</Text>
       </Pressable>
     </View>
   );
@@ -537,7 +659,7 @@ export default function App() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0f0f0f' }}>
+    <View style={{ flex: 1, backgroundColor: '#f5f6fa' }}>
       <View style={{ flex: 1, display: tab === 'dashboard' ? 'flex' : 'none' }}>
         <Dashboard onMetricPress={handleMetricPress} userName={userName} />
       </View>
@@ -552,101 +674,125 @@ export default function App() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0f0f0f', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20 },
-
-  // Splash
-  splashScreen: { flex: 1, backgroundColor: '#0a0a0f', justifyContent: 'space-between', paddingHorizontal: 32, paddingTop: 80, paddingBottom: 48 },
-  splashTop: { gap: 20 },
-  splashLogo: { fontSize: 13, fontWeight: '800', color: '#6366f1', letterSpacing: 6, textTransform: 'uppercase' },
-  splashTagline: { fontSize: 42, fontWeight: '800', color: '#fff', lineHeight: 50 },
-  splashSub: { fontSize: 15, color: '#555', lineHeight: 24, marginTop: 4 },
+  // ── Splash / Onboarding ──
+  splashScreen: { flex: 1, backgroundColor: '#fff', justifyContent: 'space-between', paddingHorizontal: 32, paddingTop: 60, paddingBottom: 48 },
+  splashTop: { gap: 24 },
+  onboardingLogo: { width: '88%', maxWidth: 320, aspectRatio: 390 / 101, alignSelf: 'flex-start' },
+  splashTagline: { fontFamily: fontSans, fontSize: 36, fontWeight: '800', color: '#111827', lineHeight: 44 },
+  splashSub: { fontFamily: fontSans, fontSize: 15, color: '#6b7280', lineHeight: 24 },
   splashBottom: { gap: 14 },
-  splashBtn: { backgroundColor: '#6366f1', borderRadius: 18, paddingVertical: 20, alignItems: 'center' },
-  splashBtnText: { color: '#fff', fontWeight: '700', fontSize: 17, letterSpacing: 0.3 },
-  splashLegal: { textAlign: 'center', fontSize: 12, color: '#333' },
+  splashLegal: { fontFamily: fontSans, textAlign: 'center', fontSize: 12, color: '#9ca3af' },
 
-  // Shared buttons
-  btn: { backgroundColor: '#6366f1', borderRadius: 14, paddingVertical: 18, alignItems: 'center', width: '100%' },
-  btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  btnGhost: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 14, paddingVertical: 18, alignItems: 'center' },
-  btnGhostText: { color: '#555', fontWeight: '600', fontSize: 16 },
+  // ── Shared buttons ──
+  btn: { backgroundColor: '#111827', borderRadius: 9999, paddingVertical: 18, alignItems: 'center', width: '100%' },
+  btnText: { fontFamily: fontSans, color: '#fff', fontWeight: '700', fontSize: 16 },
+  btnGhost: { flex: 1, backgroundColor: '#FAFAFA', borderRadius: 9999, paddingVertical: 18, alignItems: 'center' },
+  btnGhostText: { fontFamily: fontSans, color: '#111827', fontWeight: '600', fontSize: 16 },
   row: { flexDirection: 'row', gap: 12, width: '100%', marginTop: 8 },
 
-  // Dashboard
-  dashContent: { padding: 24, gap: 16, paddingBottom: 40 },
-  greeting: { fontSize: 26, fontWeight: '800', color: '#fff', marginTop: 12 },
-  insightBox: { backgroundColor: '#1a1a2e', borderRadius: 16, padding: 18, borderLeftWidth: 3, borderLeftColor: '#6366f1' },
-  insightText: { color: '#c7c7ff', fontSize: 15, lineHeight: 22 },
-  sectionTitle: { fontSize: 13, fontWeight: '600', color: '#444', textTransform: 'uppercase', letterSpacing: 1 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  card: { backgroundColor: '#1a1a1a', borderRadius: 16, padding: 16, width: '47%', gap: 4 },
-  cardAlert: { borderWidth: 1, borderColor: '#3f1f1f', backgroundColor: '#1f1212' },
-  cardIcon: { fontSize: 22 },
-  cardValue: { fontSize: 24, fontWeight: '800', color: '#fff' },
-  cardUnit: { fontSize: 14, fontWeight: '400', color: '#555' },
-  cardLabel: { fontSize: 12, color: '#555' },
-  cardHint: { fontSize: 10, color: '#6366f1', marginTop: 4, fontWeight: '600' },
-
-  bloodTestBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a2e', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#2d2d5e', marginTop: 8 },
-  bloodTestBannerTitle: { color: '#fff', fontWeight: '700', fontSize: 15, marginBottom: 2 },
-  bloodTestBannerSub: { color: '#666', fontSize: 12 },
-  bloodTestBannerArrow: { color: '#6366f1', fontSize: 20, fontWeight: '700' },
-  bloodTestDone: { backgroundColor: '#0d2d1a', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#1a5c35', alignItems: 'center', marginTop: 8 },
-  bloodTestDoneText: { color: '#4ade80', fontWeight: '700', fontSize: 15 },
-
-  uploadScreen: { flex: 1, backgroundColor: '#0f0f0f', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16 },
-  uploadEmoji: { fontSize: 64 },
-  uploadTitle: { fontSize: 26, fontWeight: '800', color: '#fff' },
-  uploadMuted: { fontSize: 14, color: '#666', textAlign: 'center', lineHeight: 22 },
-  uploadLoadingText: { fontSize: 18, fontWeight: '700', color: '#fff', marginTop: 16 },
-  uploadBtn: { backgroundColor: '#6366f1', borderRadius: 14, paddingVertical: 16, paddingHorizontal: 32, width: '100%', alignItems: 'center', marginTop: 8 },
-  uploadBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  uploadCancelBtn: { paddingVertical: 12 },
-  uploadCancelText: { color: '#555', fontSize: 14 },
-  uploadError: { backgroundColor: '#2d1515', borderRadius: 10, padding: 12, width: '100%' },
-  uploadErrorText: { color: '#f87171', fontSize: 13 },
-
-  intakeScreen: { flex: 1, backgroundColor: '#0f0f0f', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 20 },
-  intakeTitle: { fontSize: 28, fontWeight: '800', color: '#fff', textAlign: 'center' },
-  intakeSub: { fontSize: 14, color: '#666', textAlign: 'center' },
+  // ── Voice Intake ──
+  intakeScreen: { flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 20 },
+  intakeTitle: { fontFamily: fontSans, fontSize: 28, fontWeight: '800', color: '#111827', textAlign: 'center' },
+  intakeSub: { fontFamily: fontSans, fontSize: 14, color: '#6b7280', textAlign: 'center' },
   intakeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', width: '100%' },
-  intakeField: { backgroundColor: '#1a1a1a', borderRadius: 14, padding: 14, width: '46%', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: '#222' },
-  intakeFieldFilled: { borderColor: '#6366f1', backgroundColor: '#16162a' },
+  intakeField: { backgroundColor: '#f9fafb', borderRadius: 14, padding: 14, width: '46%', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: '#e5e7eb' },
+  intakeFieldFilled: { borderColor: '#111827', backgroundColor: '#f3f4f6' },
   intakeFieldIcon: { fontSize: 22 },
-  intakeFieldLabel: { fontSize: 11, color: '#555', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  intakeFieldValue: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  intakeFieldEmpty: { color: '#333' },
-  intakeTranscript: { fontSize: 13, color: '#555', fontStyle: 'italic', textAlign: 'center', paddingHorizontal: 8 },
-  intakeMic: { backgroundColor: '#6366f1', borderRadius: 60, width: 120, height: 120, alignItems: 'center', justifyContent: 'center', gap: 6 },
+  intakeFieldLabel: { fontFamily: fontSans, fontSize: 11, color: '#9ca3af', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  intakeFieldValue: { fontFamily: fontSans, fontSize: 16, fontWeight: '700', color: '#111827' },
+  intakeFieldEmpty: { color: '#d1d5db' },
+  intakeTranscript: { fontFamily: fontSans, fontSize: 13, color: '#6b7280', fontStyle: 'italic', textAlign: 'center', paddingHorizontal: 8 },
+  intakeMic: { backgroundColor: '#111827', borderRadius: 60, width: 120, height: 120, alignItems: 'center', justifyContent: 'center', gap: 8 },
   intakeMicActive: { backgroundColor: '#ef4444', transform: [{ scale: 1.08 }] },
-  intakeMicIcon: { fontSize: 36 },
-  intakeMicLabel: { fontSize: 10, color: 'rgba(255,255,255,0.8)', fontWeight: '600', textAlign: 'center' },
-  intakeError: { color: '#f87171', fontSize: 13, textAlign: 'center' },
+  intakeMicLabel: { fontFamily: fontSans, fontSize: 10, color: 'rgba(255,255,255,0.8)', fontWeight: '600', textAlign: 'center' },
+  intakeError: { fontFamily: fontSans, color: '#ef4444', fontSize: 13, textAlign: 'center' },
 
-  contextChip: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 12, marginBottom: 6, backgroundColor: '#1a1a2e', borderRadius: 12, padding: 10, borderLeftWidth: 3, borderLeftColor: '#6366f1', gap: 8 },
-  contextChipInner: { flex: 1 },
-  contextChipLabel: { fontSize: 10, color: '#6366f1', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
-  contextChipText: { fontSize: 13, color: '#c7c7ff', lineHeight: 18 },
-  contextChipClose: { fontSize: 14, color: '#555', padding: 4 },
+  // ── Upload screen ──
+  uploadScreen: { flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16 },
+  uploadEmoji: { fontSize: 64 },
+  uploadTitle: { fontFamily: fontSans, fontSize: 26, fontWeight: '800', color: '#111827' },
+  uploadMuted: { fontFamily: fontSans, fontSize: 14, color: '#6b7280', textAlign: 'center', lineHeight: 22 },
+  uploadLoadingText: { fontFamily: fontSans, fontSize: 18, fontWeight: '700', color: '#111827', marginTop: 16 },
+  uploadBtn: { backgroundColor: '#111827', borderRadius: 9999, paddingVertical: 16, paddingHorizontal: 32, width: '100%', alignItems: 'center', marginTop: 8 },
+  uploadBtnText: { fontFamily: fontSans, color: '#fff', fontWeight: '700', fontSize: 16 },
+  uploadCancelBtn: { paddingVertical: 12 },
+  uploadCancelText: { fontFamily: fontSans, color: '#9ca3af', fontSize: 14 },
+  uploadError: { backgroundColor: '#fef2f2', borderRadius: 10, padding: 12, width: '100%' },
+  uploadErrorText: { fontFamily: fontSans, color: '#ef4444', fontSize: 13 },
 
-  // Chat
-  chatScroll: { flex: 1 },
-  chatContent: { padding: 16, gap: 12, paddingBottom: 8 },
+  // ── Dashboard ──
+  dashSafe: { flex: 1, backgroundColor: '#f5f6fa' },
+  dashHeader: {
+    paddingHorizontal: 24,
+    paddingTop: 38,
+    paddingBottom: 68,
+    ...(Platform.OS === 'web'
+      ? ({ backgroundImage: 'linear-gradient(180deg, #5178B6 0%, #FA9F72 100%)' } as any)
+      : { backgroundColor: '#8CB4DD' }),
+  },
+  dashHeaderTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 },
+  dashGreetingInCard: { flex: 1, fontFamily: fontSans, fontSize: 22, lineHeight: 28, fontWeight: '500', color: '#fff' },
+  dashHeaderMeta: { alignItems: 'flex-end', gap: 4 },
+  dashMetaLine: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  dashHeaderDate: { fontFamily: fontSans, fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.95)', textTransform: 'capitalize' },
+  dashHeaderUv: { fontFamily: fontSans, fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.85)' },
+  insightCard: { marginTop: 32, borderRadius: 16, overflow: 'hidden', paddingVertical: 16, paddingHorizontal: 16 },
+  dashInCard: { fontFamily: fontSans, fontSize: 18, lineHeight: 30, fontWeight: '400' },
+  dashHiInCard: { fontFamily: fontSans, fontSize: 18, lineHeight: 30, color: '#fff', fontWeight: '700' },
+  dashDimInCard: { fontFamily: fontSans, fontSize: 18, lineHeight: 30, color: 'rgba(255,255,255,0.85)' },
+  dashSheet: { flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -24 },
+  sheetHandleWrap: { alignItems: 'center', paddingTop: 10, paddingBottom: 4 },
+  sheetHandle: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#e5e7eb' },
+  dashContent: { paddingHorizontal: 24, paddingTop: 12, gap: 16, paddingBottom: 40 },
+  sectionDateTitle: { fontFamily: fontSans, fontSize: 16, fontWeight: '700', color: '#9ca3af', letterSpacing: 0.4, marginBottom: 4, textTransform: 'capitalize' },
+
+  // ── Cards / Rings ──
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  card: { backgroundColor: '#fff', borderRadius: 18, padding: 16, width: '47%', gap: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
+  cardIcon: { fontSize: 22, fontFamily: fontSans },
+  cardValue: { fontFamily: fontSans, fontSize: 24, fontWeight: '800', color: '#111827' },
+  cardUnit: { fontFamily: fontSans, fontSize: 14, fontWeight: '400', color: '#9ca3af' },
+  cardLabel: { fontFamily: fontSans, fontSize: 12, color: '#6b7280' },
+  cardHint: { fontFamily: fontSans, fontSize: 10, color: '#6366f1', marginTop: 4, fontWeight: '600' },
+  ringRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 },
+  ringRowTop: { paddingTop: 16 },
+  ringCard: { alignItems: 'center', flex: 1, backgroundColor: 'transparent', borderWidth: 0, shadowOpacity: 0, paddingVertical: 8 },
+  ringWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  ringCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  ringValue: { fontFamily: fontSans, fontSize: 18, fontWeight: '800', lineHeight: 22 },
+  ringUnit: { fontFamily: fontSans, fontSize: 10, fontWeight: '500', color: '#9ca3af', lineHeight: 12 },
+
+  // ── Blood test banner ──
+  bloodTestBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f9fafb', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#e5e7eb', marginTop: 8 },
+  bloodTestBannerTitle: { fontFamily: fontSans, color: '#111827', fontWeight: '700', fontSize: 15, marginBottom: 2 },
+  bloodTestBannerSub: { fontFamily: fontSans, color: '#9ca3af', fontSize: 12 },
+  bloodTestBannerArrow: { fontFamily: fontSans, color: '#111827', fontSize: 20, fontWeight: '700' },
+  bloodTestDone: { backgroundColor: '#f0fdf4', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#bbf7d0', alignItems: 'center', marginTop: 8 },
+  bloodTestDoneText: { fontFamily: fontSans, color: '#16a34a', fontWeight: '700', fontSize: 15 },
+
+  // ── Chat (light) ──
+  chatSafe: { flex: 1, backgroundColor: '#f5f6fa' },
+  chatKeyboard: { flex: 1, backgroundColor: '#f5f6fa' },
+  chatScroll: { flex: 1, backgroundColor: '#f5f6fa' },
+  chatContent: { padding: 16, gap: 12, paddingBottom: 8, flexGrow: 1 },
   bubble: { maxWidth: '80%', borderRadius: 16, padding: 14 },
-  bubbleCoach: { backgroundColor: '#1a1a1a', alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
+  bubbleCoach: { backgroundColor: '#fff', alignSelf: 'flex-start', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: '#e5e7eb', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3 },
   bubbleUser: { backgroundColor: '#6366f1', alignSelf: 'flex-end', borderBottomRightRadius: 4 },
-  bubbleText: { color: '#e2e8f0', fontSize: 15, lineHeight: 22 },
+  bubbleText: { fontFamily: fontSans, color: '#374151', fontSize: 15, lineHeight: 22 },
   bubbleTextUser: { color: '#fff' },
-  chatBar: { flexDirection: 'row', padding: 12, gap: 8, borderTopWidth: 1, borderTopColor: '#1e1e1e', backgroundColor: '#0f0f0f' },
-  chatInput: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, color: '#fff', fontSize: 15 },
-  chatSend: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' },
+  contextChip: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 12, marginBottom: 6, backgroundColor: '#eff6ff', borderRadius: 12, padding: 10, borderLeftWidth: 3, borderLeftColor: '#6366f1', gap: 8 },
+  contextChipInner: { flex: 1 },
+  contextChipLabel: { fontFamily: fontSans, fontSize: 10, color: '#6366f1', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+  contextChipText: { fontFamily: fontSans, fontSize: 13, color: '#374151', lineHeight: 18 },
+  contextChipClose: { fontFamily: fontSans, fontSize: 14, color: '#9ca3af', padding: 4 },
+  chatBar: { flexDirection: 'row', padding: 12, gap: 8, borderTopWidth: 1, borderTopColor: '#e5e7eb', backgroundColor: '#fff' },
+  chatInput: { flex: 1, backgroundColor: '#f3f4f6', borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, color: '#111827', fontSize: 15, fontFamily: fontSans },
+  chatSend: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#111827', alignItems: 'center', justifyContent: 'center' },
   chatSendRed: { backgroundColor: '#ef4444' },
-  chatSendIcon: { color: '#fff', fontSize: 18 },
 
-  // Tab bar
-  tabBar: { flexDirection: 'row', backgroundColor: '#111', borderTopWidth: 1, borderTopColor: '#1e1e1e', paddingBottom: 28, paddingTop: 12 },
+  // ── Tab bar ──
+  tabBar: { flexDirection: 'row', backgroundColor: '#fff', paddingBottom: 28, paddingTop: 12 },
   tab: { flex: 1, alignItems: 'center', gap: 4 },
-  tabIcon: { fontSize: 22, opacity: 0.3 },
-  tabLabel: { fontSize: 11, color: '#444' },
-  tabActive: { opacity: 1, color: '#6366f1' },
+  tabLabel: { fontFamily: fontSans, fontSize: 11, color: '#d1d5db' },
+  tabLabelActive: { color: '#111827' },
 });
