@@ -30,7 +30,6 @@ from mistralai.client import Mistral
 from pydantic import BaseModel
 from uvicorn import run as uvicorn_run
 
-from backend.berries import award, init_berries, total
 from backend.brain import (
     PatientContext,
     SessionData,
@@ -138,8 +137,7 @@ def _get_thryve() -> ThryveClient:
 async def lifespan(app: FastAPI):
     require_thryve_credentials()
     init_db()
-    init_berries()
-    logger.info("Database and berries ledger initialized")
+    logger.info("Database initialized")
     yield
 
 
@@ -243,7 +241,7 @@ async def checkup_audio(audio: UploadFile = File(...)):
 async def checkup_respond(req: RespondRequest):
     """Process a user transcript and return SSE stream with full checkup flow.
 
-    Event types: emotion, health_data, text, audio, burnout_score, protocol, berries, done.
+    Event types: emotion, health_data, text, audio, burnout_score, protocol, done.
     """
     session = sessions.get(req.session_id)
     if session is None:
@@ -377,21 +375,7 @@ async def checkup_respond(req: RespondRequest):
         protocol_actions = _extract_protocol(final_text, burnout_result)
         yield sse_event("protocol", {"actions": protocol_actions})
 
-        # Step i: berries (award on checkup turn >= 3)
-        if session.turn_count >= 3:
-            try:
-                amount = await loop.run_in_executor(None, award, "weekly_checkup")
-                berries_total = await loop.run_in_executor(None, total)
-                yield sse_event("emotion", {"state": "happy", "label": "Bravo !"})
-                yield sse_event("berries", {
-                    "amount": amount,
-                    "total": berries_total,
-                    "reason": "Bilan hebdomadaire complété",
-                })
-            except Exception:
-                logger.exception("Berries award failed")
-
-        # Step j: done
+        # Step i: done
         yield sse_event("done", {})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -427,14 +411,11 @@ async def patient_summary(patient_id: str):
     except Exception:
         logger.exception("Failed to fetch burnout metrics for %s", patient_id)
 
-    berries_total = await loop.run_in_executor(None, total)
-
     return {
         "burnout_score": burnout_result.score if burnout_result else None,
         "level": burnout_result.level if burnout_result else None,
         "protocol": _extract_protocol(None, burnout_result),
         "last_checkup": None,  # TODO: track from sessions
-        "berries_total": berries_total,
     }
 
 

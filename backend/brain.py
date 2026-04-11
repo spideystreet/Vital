@@ -1,4 +1,4 @@
-"""LLM reasoning with Thryve health context and 8-tool function calling."""
+"""LLM reasoning with Thryve health context and 9-tool function calling."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from statistics import mean
 
 from mistralai.client import Mistral
 
-from backend.berries import award, total
 from backend.burnout import BurnoutResult, compute_burnout
 from backend.config import LLM_MODEL
 from backend.thryve import METRIC_CODES, ThryveClient
@@ -95,8 +94,8 @@ de stress et recommande d'agir.
 Pas de conseils vagues.
 
 OUTILS:
-- Tu as 8 outils pour consulter les donnees de sante, calculer le burnout, \
-et agir (berries, consultation). Utilise-les quand la question le necessite.
+- Tu as 9 outils pour consulter les donnees de sante, calculer le burnout, \
+et agir (consultation, memoire). Utilise-les quand la question le necessite.
 - Pour une question generale, les donnees deja fournies ci-dessous suffisent.
 
 REGLES:
@@ -124,8 +123,7 @@ une etape a la fois, en attendant la reponse de l'utilisateur entre chaque quest
 4. Demande : "Tu as reussi a decrocher du travail le soir ?"
 5. Synthese : croise les reponses avec le score burnout (appelle get_burnout_score), \
 nomme le pattern dominant (ex : "stress chronique leger"), donne le score sur 100 \
-et UNE recommandation concrete. Si signaux rouges persistants, propose book_consultation. \
-Termine par award_berries pour recompenser le checkup.
+et UNE recommandation concrete. Si signaux rouges persistants, propose book_consultation.
 Reste dans le style vocal court (3-4 phrases max par tour).
 """
 
@@ -271,28 +269,6 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "award_berries",
-            "description": (
-                "Award Alan Play berries to the user after completing a weekly "
-                "checkup or responding to a daily nudge. Returns berries earned "
-                "and new total balance. Use at the end of a successful checkup."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "action": {
-                        "type": "string",
-                        "enum": ["weekly_checkup", "daily_nudge_accepted"],
-                        "description": "The action that earned the berries",
-                    },
-                },
-                "required": ["action"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "book_consultation",
             "description": (
                 "Book a consultation with a health professional (psychologist, "
@@ -337,7 +313,6 @@ TOOL_EMOTIONS: dict[str, str] = {
     "get_burnout_score": "thinking",
     "get_trend": "curious",
     "get_correlation": "thinking",
-    "award_berries": "happy",
     "book_consultation": "encouraging",
 }
 
@@ -423,10 +398,6 @@ def execute_tool(
             result = _tool_get_correlation(
                 patient, args["metric_a"], args["metric_b"], args.get("days", 7)
             )
-
-        elif name == "award_berries":
-            result = _tool_award_berries(args["action"])
-            emotion = "happy"
 
         elif name == "book_consultation":
             result = _tool_book_consultation(args)
@@ -672,20 +643,6 @@ def _tool_get_correlation(
         "compound_risk": compound_risk,
         "data_points": n,
     }
-
-
-def _tool_award_berries(action: str) -> dict:
-    """Award berries and return the result."""
-    try:
-        earned = award(action)
-        balance = total()
-        return {
-            "action": action,
-            "earned": earned,
-            "total_balance": balance,
-        }
-    except ValueError as e:
-        return {"error": str(e)}
 
 
 def _tool_book_consultation(args: dict) -> dict:
