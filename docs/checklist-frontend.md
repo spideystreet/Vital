@@ -1,3 +1,5 @@
+> **⚠️ SUPERSEDED (2026-04-11).** Reflects the pre-pivot weekly-checkup build. Current views + API contract: `HANDOFF.md` (the "Frontend — views to build" and "API contract" sections).
+
 # Frontend Checklist
 
 ## Core

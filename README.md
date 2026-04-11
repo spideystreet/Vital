@@ -36,23 +36,24 @@ Absenteeism costs French companies €120B/year. 36% of long-term sick leave is 
 
 ## The solution
 
-V.I.T.A.L is a vocal health checkup that crosses what you feel (your voice) with what your body measures (Apple Watch / HealthKit), to detect burnout before it happens.
+V.I.T.A.L is a **proactive life coach with persistent memory**. It watches your wearable data continuously, remembers your personal patterns, and pushes adaptive daily protocols **before** problems compound into doctor visits.
 
 <p align="center">
   <img src="public/mockups/demo-screenshot-3.png" alt="V.I.T.A.L demo" width="100%">
 </p>
 
-→ **You talk** — "How am I doing this week?"
-→ **It measures** — HRV, heart rate, sleep, activity from your Watch
-→ **It crosses** — "You say you're fine but your HRV dropped from 48 to 22ms"
-→ **It acts** — "Want me to book a psychologist? It's covered by your plan."
+→ **It watches** — HRV, heart rate, sleep, activity via Thryve (22 wearable brands)
+→ **It remembers** — every event, every protocol, every user-stated goal, stored as append-only markdown
+→ **It reaches you** — morning brief + memory-driven notifications, not a dashboard you have to open
+→ **It talks to you about you** — *"three weeks ago I saw this exact pattern, the magnesium + zone-2 walk worked in 4 days — let's do that again"*
 
-Works with Apple Watch for full biometric data, or with iPhone Health app alone for users without a Watch.
+The differentiator vs dashboard apps (Bevel, Whoop, Oura): persistent memory in the Openclaw / Hermes agent style. Every insight is grounded in the user's own baseline, never population averages.
 
-### Two rituals, no noise
+### Three surfaces, one brain
 
-→ **Weekly vocal checkup** — a 2-minute structured conversation that crosses 7 days of biometrics with three subjective questions, producing a burnout score and one concrete action.
-→ **Smart daily nudge** — V.I.T.A.L only pings you when your body actually shows a stress signal (HRV drop, short sleep, elevated resting HR). No daily nag. You earn rewards only when listening to your body matters.
+→ **Morning brief** — the coach initiates. Diagnosis + memory callback + adaptive protocol + one question. Voice via Voxtral TTS, text card in parallel. The user replies and the memory updates live.
+→ **Stats dashboard + chat with your data** — each Thryve metric shown with delta vs personal baseline and an LLM insight phrase. Tap a stat to open the chat pre-loaded with that context.
+→ **Active notifications** — silent, event-driven. When a biometric deviates ≥2σ from the user's personal baseline, a memory-grounded message pops in — *"3rd time this month after <4h deep sleep, same as mid-March"*.
 
 ## Powered by
 

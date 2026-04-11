@@ -1,3 +1,5 @@
+> **⚠️ SUPERSEDED (2026-04-11).** Reflects the pre-pivot weekly-checkup build. Current backend plan: `docs/superpowers/plans/2026-04-11-proactive-coach-pivot.md`. Current API contract: `HANDOFF.md`.
+
 # Backend Checklist (Hichem)
 
 ## APIs

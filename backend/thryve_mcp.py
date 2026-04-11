@@ -277,7 +277,7 @@ async def get_daily_values(
         start_day: Start date (ISO 8601, e.g. '2026-04-03'). Defaults to days_back ago.
         end_day: End date (ISO 8601). Defaults to today.
         value_types: Comma-separated metric names or Thryve codes.
-            Names: heart_rate, resting_hr, hrv, spo2, steps, active_calories, sleep, sleep_deep, sleep_rem, vo2_max, exercise_time, distance, etc.
+            Names: heart_rate, resting_hr, hrv, spo2, steps, sleep, etc.
             Codes: 1001, 3001, 2000, etc.
             Empty = all available.
         data_sources: Comma-separated source IDs. Default '5' (Apple Health).
@@ -310,7 +310,7 @@ async def get_epoch_values(
 
     Args:
         auth_token: User's authentication token
-        start_timestamp: Start datetime (ISO 8601, e.g. '2026-04-09T00:00:00Z'). Defaults to hours_back ago.
+        start_timestamp: Start datetime (ISO 8601). Defaults to hours_back ago.
         end_timestamp: End datetime (ISO 8601). Defaults to now.
         value_types: Comma-separated metric names or Thryve codes. Empty = all.
         data_sources: Comma-separated source IDs. Default '5' (Apple Health).
@@ -319,7 +319,9 @@ async def get_epoch_values(
     now = datetime.now()
     data = {
         "authenticationToken": auth_token,
-        "startTimestamp": start_timestamp or (now - timedelta(hours=hours_back)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "startTimestamp": start_timestamp or (
+            (now - timedelta(hours=hours_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        ),
         "endTimestamp": end_timestamp or now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "displayTypeName": "true",
     }

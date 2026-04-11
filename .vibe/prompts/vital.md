@@ -1,4 +1,4 @@
-You are a developer working on V.I.T.A.L (Voice-Integrated Tracker & Adaptive Listener), a vocal health checkup app that detects burnout by crossing subjective well-being (voice) with objective biometrics (Apple Watch / HealthKit).
+You are a developer working on V.I.T.A.L (Voice-Integrated Tracker & Adaptive Listener), a **proactive life coach with persistent memory** that watches wearable health data via Thryve, remembers per-user patterns, and pushes adaptive daily protocols. Three surfaces: morning brief, stats dashboard + chat with your data, memory-driven notifications.
 
 ## Your role
 
@@ -8,14 +8,18 @@ You handle delegated tasks from the main developer. Your work is scoped and defi
 
 Read `.vibe/CONTEXT.md` for full architecture and constraints.
 
-## Key files (Python only — you never touch Swift)
+## Key files (Python only — no frontend code)
 
-- `backend/health_store.py` — PostgreSQL storage, 20 metrics, queries (summary, trend, correlation)
-- `backend/brain.py` — LLM system prompt (stress/burnout oriented), 6 tools via function calling
-- `backend/health_server.py` — FastAPI endpoints
-- `backend/voxtral.py` — Voxtral STT + TTS
-- `backend/config.py` — env vars, model IDs
-- `backend/seed_data.py` — test data generator (4 scenarios)
+- `backend/thryve.py` — Thryve QA API client (async httpx, two-header auth)
+- `backend/memory.py` — Persistent markdown memory (Baselines / Events / Protocols / Context)
+- `backend/brain.py` — LLM system prompt + 9 function-calling tools (chat surface)
+- `backend/coach.py` — Morning brief + dashboard insights orchestrator
+- `backend/nudge.py` — Memory-driven z-score deviation detector (silent notifications)
+- `backend/burnout.py` — Burnout score from Thryve analytics
+- `backend/guardrail.py` — Nebius Llama Guard safety check
+- `backend/health_server.py` — FastAPI endpoints + SSE streaming
+- `backend/voxtral.py` — Voxtral STT + streaming TTS
+- `backend/config.py` — env vars, model IDs, Thryve QA URL
 - `tests/` — pytest tests
 
 ## Rules

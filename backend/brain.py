@@ -1,190 +1,241 @@
-"""LLM reasoning with health context injection and tool use."""
+"""LLM reasoning with Thryve health context and 8-tool function calling."""
 
+from __future__ import annotations
+
+import asyncio
 import json
+import logging
 from collections.abc import Iterator
+from dataclasses import dataclass
+from statistics import mean
 
 from mistralai.client import Mistral
 
+from backend.berries import award, total
+from backend.burnout import BurnoutResult, compute_burnout
 from backend.config import LLM_MODEL
-from backend.health_store import compare_periods, get_correlation, get_latest, get_summary, get_trend
+from backend.thryve import METRIC_CODES, ThryveClient
+
+log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Patient & session data holders
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PatientContext:
+    """Identifies the patient for the current conversation."""
+
+    token: str  # Thryve auth token
+    name: str
+    age: int | None = None
+
+
+@dataclass
+class SessionData:
+    """Cached health data fetched once per session to avoid redundant API calls."""
+
+    vitals: dict | None = None
+    blood_panel: dict | None = None
+    burnout: BurnoutResult | None = None
+    user_info: dict | None = None
+
+
+# ---------------------------------------------------------------------------
+# System prompt
+# ---------------------------------------------------------------------------
 
 SYSTEM_TEMPLATE = """\
-Tu es V.I.T.A.L, un coach bien-être vocal spécialisé dans la prévention du stress \
-et du burnout. Tu analyses les données de santé de l'utilisateur pour détecter \
-les signaux de stress chronique et l'aider à prévenir l'épuisement professionnel.
+Tu es V.I.T.A.L, un coach bien-etre vocal specialise dans la prevention du stress \
+et du burnout. Tu analyses les donnees de sante de l'utilisateur (via Thryve + Apple Watch) \
+pour detecter les signaux de stress chronique et l'aider a prevenir l'epuisement professionnel.
 
 {user_profile}
 
 MISSION:
-Ta priorité est de détecter les signes de stress et de fatigue accumulée. \
-Les indicateurs clés de stress sont :
-- HRV basse (< 30 ms) = récupération insuffisante, stress physiologique
-- Resting HR élevée (> 80 bpm) = système nerveux en alerte
-- Sommeil dégradé (< 6h, peu de profond/REM) = récupération compromise
-- Sédentarité (< 5000 pas) = facteur aggravant
-- Tendance négative sur plusieurs jours = stress chronique, risque de burnout
+Ta priorite est de detecter les signes de stress et de fatigue accumulee. \
+Les indicateurs cles de stress sont :
+- HRV basse (RMSSD < 30 ms) = recuperation insuffisante, stress physiologique
+- Resting HR elevee (> 80 bpm) = systeme nerveux en alerte
+- Sommeil degrade (qualite < 60/100, duree < 6h) = recuperation compromise
+- Score burnout >= 60/100 = zone rouge, agir immediatement
+- Tendance negative sur plusieurs jours = stress chronique, risque de burnout
 
-REPÈRES (adulte en bonne santé):
-- Fréquence cardiaque repos : 60-100 bpm (athlète < 60, stress > 80)
-- HRV (variabilité cardiaque) : 40-100 ms est bon, < 30 ms = stress, > 70 ms = excellent
-- SpO2 (oxygène sang) : 96-100% normal, < 94% = consulter
-- Sommeil total : 7-9h recommandé, < 6h = insuffisant
-- Sommeil profond : 1-2h, < 45 min = très peu
-- Sommeil REM : 1.5-2h, < 1h = insuffisant
-- Fréq. respiratoire : 12-20 brpm
-- VO2 max : < 35 = faible, 35-42 = moyen, 42-50 = bon, > 50 = excellent
-- Pas quotidiens : 7000-10000 = actif, < 5000 = sédentaire
-- Température poignet : > 0.5°C au-dessus de la baseline = à surveiller
+SCORE BURNOUT (0-100):
+- 0-30 = risque faible (vert) : tout va bien, encourage
+- 30-60 = risque modere (orange) : signaux a surveiller, propose un protocole
+- 60-100 = risque eleve (rouge) : alerte, recommande consultation + actions immediates
+Le score repose sur 3 analytics Thryve : stress quotidien (45%), risque sante mentale (35%), \
+prediction arret maladie (20%). Si ces analytics ne sont pas disponibles, un score de secours \
+est calcule a partir des biometriques brutes (HRV, sommeil, FC repos).
+
+REPERES (adulte en bonne sante):
+- Frequence cardiaque repos : 60-100 bpm (athlete < 60, stress > 80)
+- HRV (RMSSD) : 40-100 ms est bon, < 30 ms = stress, > 70 ms = excellent
+- Sommeil qualite Thryve : > 80 = bon, 60-80 = moyen, < 60 = insuffisant
+- Glycemie a jeun : 0.7-1.1 g/L normal, > 1.26 = consulter
+- HbA1c : < 5.7% normal, 5.7-6.4% = prediabete, > 6.5% = diabete
 
 STYLE:
-- MAXIMUM 3-4 phrases courtes. C'est lu à voix haute par un assistant vocal. \
-Une réponse de plus de 4 phrases est un ÉCHEC.
-- Ne mentionne que les 2-3 indicateurs les plus pertinents pour la question posée.
-- Pour une question générale ("comment je vais"), regarde d'abord si des signaux \
-de stress existent (HRV < 30, HR repos > 80, sommeil < 6h). Si oui, alerte. \
-Si tout est dans les normes, dis-le franchement et encourage. \
-Ne cherche pas du stress là où il n'y en a pas.
-- Si le profil utilisateur est disponible, adapte tes repères à son âge, sexe \
-et morphologie.
-- Parle en français conversationnel, comme un coach bienveillant mais honnête.
-- Cite les chiffres réels et compare aux repères quand c'est utile.
-- Si plusieurs signaux de stress convergent (HRV bas + mauvais sommeil + sédentarité), \
-nomme-le clairement comme un pattern de stress et recommande d'agir.
+- MAXIMUM 3-4 phrases courtes. C'est lu a voix haute par un assistant vocal. \
+Une reponse de plus de 4 phrases est un ECHEC.
+- Ne mentionne que les 2-3 indicateurs les plus pertinents pour la question posee.
+- Pour une question generale ("comment je vais"), regarde d'abord le score burnout \
+et les signaux. Si des signaux de stress existent, alerte. \
+Si tout est dans les normes, dis-le franchement et encourage.
+- Si le profil utilisateur est disponible, adapte tes reperes a son age.
+- Parle en francais conversationnel, comme un coach bienveillant mais honnete.
+- Cite les chiffres reels et compare aux reperes quand c'est utile.
+- Si plusieurs signaux de stress convergent, nomme-le clairement comme un pattern \
+de stress et recommande d'agir.
 - Quand tu mentionnes un terme technique, glisse une explication courte et naturelle.
-- Si les données ne suffisent pas, termine par une seule question ciblée.
-- Propose des actions concrètes : marche, respiration, pause, consultation psy. \
+- Si les donnees ne suffisent pas, termine par une seule question ciblee.
+- Propose des actions concretes : marche, respiration, pause, consultation psy. \
 Pas de conseils vagues.
 
 OUTILS:
-- Tu as accès à des outils pour consulter les données de santé. \
-Utilise-les quand la question nécessite une fenêtre de temps spécifique, \
-des données brutes, une tendance ou une corrélation.
-- Pour une question générale, les données déjà fournies ci-dessous suffisent.
+- Tu as 8 outils pour consulter les donnees de sante, calculer le burnout, \
+et agir (berries, consultation). Utilise-les quand la question le necessite.
+- Pour une question generale, les donnees deja fournies ci-dessous suffisent.
 
-RÈGLES:
-- JAMAIS de diagnostic médical. Tu n'es PAS médecin.
+REGLES:
+- JAMAIS de diagnostic medical. Tu n'es PAS medecin.
 - Si les signaux de stress sont persistants (plusieurs jours), recommande \
-de consulter un professionnel de santé ou un psychologue.
-- Si une donnée manque, dis-le en une phrase et passe à ce que tu as.
+de consulter un professionnel de sante ou un psychologue.
+- Si une donnee manque, dis-le en une phrase et passe a ce que tu as.
 - Ne dis jamais qu'un mauvais chiffre est "normal" ou "bon signe".
-- JAMAIS de markdown (pas de **, pas de #, pas de listes à puces). \
-Ta réponse est lue à voix haute, le formatage est interdit.
+- JAMAIS de markdown (pas de **, pas de #, pas de listes a puces). \
+Ta reponse est lue a voix haute, le formatage est interdit.
 
 {checkup_block}
---- DONNÉES SANTÉ (dernières {hours}h) ---
+--- DONNEES SANTE ({data_window}) ---
 {health_context}
 """
 
 WEEKLY_CHECKUP_BLOCK = """\
 MODE CHECKUP HEBDOMADAIRE:
-Tu démarres le rituel hebdomadaire de V.I.T.A.L. Déroule cette structure, \
-une étape à la fois, en attendant la réponse de l'utilisateur entre chaque question :
-1. Salue brièvement et résume la semaine en UNE phrase en citant 2-3 chiffres clés \
-(HRV moyenne, sommeil, pas). Appelle get_health_summary(168) si besoin.
-2. Demande : "Sur une échelle de 1 à 10, ton niveau d'énergie cette semaine ?"
-3. Demande : "Qu'est-ce qui t'a le plus pesé cette semaine ?"
-4. Demande : "Tu as réussi à décrocher du travail le soir ?"
-5. Synthèse : croise les réponses avec les tendances (appelle get_health_trend si utile), \
-nomme le pattern dominant (ex : "stress chronique léger"), donne un score sur 100 \
-et UNE recommandation concrète. Si signaux rouges persistants, propose book_consultation.
+Tu demarres le rituel hebdomadaire de V.I.T.A.L. Deroule cette structure, \
+une etape a la fois, en attendant la reponse de l'utilisateur entre chaque question :
+1. Salue brievement et resume la semaine en UNE phrase en citant 2-3 chiffres cles \
+(HRV moyenne, sommeil, score burnout). Appelle get_vitals si besoin.
+2. Demande : "Sur une echelle de 1 a 10, ton niveau d'energie cette semaine ?"
+3. Demande : "Qu'est-ce qui t'a le plus pese cette semaine ?"
+4. Demande : "Tu as reussi a decrocher du travail le soir ?"
+5. Synthese : croise les reponses avec le score burnout (appelle get_burnout_score), \
+nomme le pattern dominant (ex : "stress chronique leger"), donne le score sur 100 \
+et UNE recommandation concrete. Si signaux rouges persistants, propose book_consultation. \
+Termine par award_berries pour recompenser le checkup.
 Reste dans le style vocal court (3-4 phrases max par tour).
 """
 
 NORMAL_BLOCK = ""
 
+# ---------------------------------------------------------------------------
+# Tool definitions (Mistral function calling format)
+# ---------------------------------------------------------------------------
+
 TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "get_health_summary",
-            "description": "Get aggregated health metrics (avg, min, max, latest) "
-            "over a specific time window. Use when the user asks about a specific "
-            "period (e.g. 'last 3 days', 'this week').",
+            "name": "get_user_profile",
+            "description": (
+                "Get patient profile: name, age, connected wearable devices, "
+                "and a summary of their latest blood panel. "
+                "Use at the start of a conversation or when asked about the patient."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "hours": {
-                        "type": "integer",
-                        "description": "Number of hours to look back (e.g. 24, 72, 168)",
-                    }
-                },
-                "required": ["hours"],
+                "properties": {},
+                "required": [],
             },
         },
     },
     {
         "type": "function",
         "function": {
-            "name": "get_latest_readings",
-            "description": "Get the N most recent raw readings for a specific metric. "
-            "Use when the user asks about recent values or wants detail on one metric.",
+            "name": "get_vitals",
+            "description": (
+                "Get HRV (RMSSD), resting heart rate, sleep quality, and heart rate "
+                "during sleep over the last N days. Use when the user asks about their "
+                "vitals, stress indicators, or how their week went."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "metric": {
-                        "type": "string",
-                        "description": "Metric name (e.g. heart_rate, hrv, sleep, steps, spo2)",
-                    },
-                    "limit": {
+                    "days": {
                         "type": "integer",
-                        "description": "Number of recent readings to return (default 5)",
+                        "description": "Number of days to look back (default 7)",
                     },
                 },
-                "required": ["metric"],
+                "required": [],
             },
         },
     },
     {
         "type": "function",
         "function": {
-            "name": "get_health_trend",
-            "description": "Compare the last 24h average to the previous N days for a metric. "
-            "Returns direction (up/down/stable) and percentage change. "
-            "Use when the user asks about evolution or trends.",
+            "name": "get_blood_panel",
+            "description": (
+                "Get blood biomarkers: glucose, HbA1c from Thryve, plus simulated "
+                "ferritin, cortisol, and vitamin D. Use when the user asks about "
+                "blood work, nutrition, or energy levels."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {
+                        "type": "integer",
+                        "description": "Number of days to look back (default 30)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_burnout_score",
+            "description": (
+                "Compute the burnout risk score (0-100) from RMSSD, sleep quality, "
+                "and resting heart rate. Returns score, risk level (low/moderate/high), "
+                "component breakdown, and warning signals. "
+                "Use when the user asks about burnout, stress level, or overall status."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_trend",
+            "description": (
+                "Compare recent values (last 2 days) vs baseline (previous N days) "
+                "for a specific metric. Returns direction (up/down/stable) and "
+                "percentage change. Use when the user asks about evolution or trends."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "metric": {
                         "type": "string",
-                        "description": "Metric name (e.g. heart_rate, hrv, sleep, steps)",
+                        "description": (
+                            "Metric name: hrv, resting_hr, sleep_quality, "
+                            "heart_rate_sleep, steps, heart_rate, sleep_duration"
+                        ),
                     },
                     "days": {
                         "type": "integer",
-                        "description": "Number of previous days to compare against (default 3)",
+                        "description": "Baseline period in days (default 7)",
                     },
                 },
                 "required": ["metric"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "compare_periods",
-            "description": "Compare a metric between two time periods. "
-            "Use when the user asks 'was I better last week?' or compares two periods.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "metric": {
-                        "type": "string",
-                        "description": "Metric name (e.g. heart_rate, hrv, sleep, steps)",
-                    },
-                    "period_a_hours": {
-                        "type": "integer",
-                        "description": "Duration of recent period in hours (e.g. 24 for today)",
-                    },
-                    "period_b_hours": {
-                        "type": "integer",
-                        "description": "Duration of comparison period in hours (e.g. 24 for one day)",
-                    },
-                    "period_b_offset_hours": {
-                        "type": "integer",
-                        "description": "How many hours ago the comparison period ends "
-                        "(e.g. 168 for last week)",
-                    },
-                },
-                "required": ["metric", "period_a_hours", "period_b_hours", "period_b_offset_hours"],
             },
         },
     },
@@ -192,19 +243,21 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_correlation",
-            "description": "Check if two health metrics are correlated over the last N days. "
-            "Use when the user asks if one metric affects another "
-            "(e.g. 'is my sleep affecting my stress?').",
+            "description": (
+                "Cross two health signals to detect compound risk (e.g. poor sleep "
+                "AND low HRV). Returns whether both signals are degraded and a "
+                "risk assessment. Use when the user asks if one metric affects another."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "metric_a": {
                         "type": "string",
-                        "description": "First metric name (e.g. sleep)",
+                        "description": "First metric name (e.g. hrv, sleep_quality)",
                     },
                     "metric_b": {
                         "type": "string",
-                        "description": "Second metric name (e.g. hrv)",
+                        "description": "Second metric name (e.g. resting_hr, steps)",
                     },
                     "days": {
                         "type": "integer",
@@ -218,23 +271,49 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "award_berries",
+            "description": (
+                "Award Alan Play berries to the user after completing a weekly "
+                "checkup or responding to a daily nudge. Returns berries earned "
+                "and new total balance. Use at the end of a successful checkup."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["weekly_checkup", "daily_nudge_accepted"],
+                        "description": "The action that earned the berries",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "book_consultation",
-            "description": "Book a consultation with a health professional (psychologist, "
-            "general practitioner, etc.) covered by the user's Alan health plan. "
-            "Use when the user agrees to see a professional or when stress signals "
-            "are persistent and you recommend it.",
+            "description": (
+                "Book a consultation with a health professional (psychologist, "
+                "general practitioner, etc.) covered by the user's Alan health plan. "
+                "Use when the user agrees to see a professional or when stress signals "
+                "are persistent and you recommend it."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "specialty": {
                         "type": "string",
-                        "description": "Type of professional (e.g. psychologue, médecin généraliste)",
+                        "description": "Type of professional (psychologue, generaliste)",
                     },
                     "urgency": {
                         "type": "string",
                         "enum": ["routine", "soon", "urgent"],
-                        "description": "How soon the appointment should be (routine=this week, "
-                        "soon=next 48h, urgent=today)",
+                        "description": (
+                            "How soon the appointment should be "
+                            "(routine=this week, soon=next 48h, urgent=today)"
+                        ),
                     },
                     "reason": {
                         "type": "string",
@@ -247,111 +326,493 @@ TOOLS = [
     },
 ]
 
+# ---------------------------------------------------------------------------
+# Emotion mapping (tool name -> bear mascot emotion)
+# ---------------------------------------------------------------------------
 
-def _execute_tool(name: str, args: dict) -> str:
-    """Execute a tool call and return the result as JSON string."""
+TOOL_EMOTIONS: dict[str, str] = {
+    "get_user_profile": "curious",
+    "get_vitals": "curious",
+    "get_blood_panel": "curious",
+    "get_burnout_score": "thinking",
+    "get_trend": "curious",
+    "get_correlation": "thinking",
+    "award_berries": "happy",
+    "book_consultation": "encouraging",
+}
+
+
+def _emotion_for_burnout(score: int) -> str:
+    """Return the bear emotion based on burnout score."""
+    if score >= 60:
+        return "alert"
+    if score >= 30:
+        return "concerned"
+    return "happy"
+
+
+# ---------------------------------------------------------------------------
+# Async helper: run a coroutine from sync context
+# ---------------------------------------------------------------------------
+
+
+def _run_async(coro):
+    """Run an async coroutine from synchronous code.
+
+    Handles the case where an event loop is already running (e.g. inside
+    FastAPI) by creating a new thread with its own loop.
+    """
     try:
-        if name == "get_health_summary":
-            result = get_summary(args["hours"])
-        elif name == "get_latest_readings":
-            rows = get_latest(args["metric"], args.get("limit", 5))
-            result = [
-                {
-                    "metric": r["metric"],
-                    "value": r["value"],
-                    "unit": r["unit"],
-                    "recorded_at": r["recorded_at"].isoformat(),
-                }
-                for r in rows
-            ]
-        elif name == "get_health_trend":
-            result = get_trend(args["metric"], args.get("days", 3))
-        elif name == "compare_periods":
-            result = compare_periods(
-                args["metric"],
-                args["period_a_hours"],
-                args["period_b_hours"],
-                args["period_b_offset_hours"],
-            )
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result(timeout=30)
+    return asyncio.run(coro)
+
+
+# ---------------------------------------------------------------------------
+# Tool executor
+# ---------------------------------------------------------------------------
+
+_thryve = ThryveClient()
+
+
+def _extract_values(metric_data: list[dict]) -> list[float]:
+    """Extract numeric values from Thryve metric data."""
+    return [v["value"] for v in metric_data if isinstance(v.get("value"), (int, float))]
+
+
+def execute_tool(
+    name: str,
+    args: dict,
+    patient: PatientContext,
+    session: SessionData,
+) -> tuple[str, str]:
+    """Execute a tool call and return (result_json, emotion).
+
+    Uses cached session data when available, fetches from Thryve otherwise.
+    """
+    emotion = TOOL_EMOTIONS.get(name, "thinking")
+
+    try:
+        if name == "get_user_profile":
+            result = _tool_get_user_profile(patient, session)
+
+        elif name == "get_vitals":
+            days = args.get("days", 7)
+            result = _tool_get_vitals(patient, session, days)
+
+        elif name == "get_blood_panel":
+            days = args.get("days", 30)
+            result = _tool_get_blood_panel(patient, session, days)
+
+        elif name == "get_burnout_score":
+            result = _tool_get_burnout_score(patient, session)
+            if session.burnout:
+                emotion = _emotion_for_burnout(session.burnout.score)
+
+        elif name == "get_trend":
+            result = _tool_get_trend(patient, args["metric"], args.get("days", 7))
+
         elif name == "get_correlation":
-            result = get_correlation(args["metric_a"], args["metric_b"], args.get("days", 7))
+            result = _tool_get_correlation(
+                patient, args["metric_a"], args["metric_b"], args.get("days", 7)
+            )
+
+        elif name == "award_berries":
+            result = _tool_award_berries(args["action"])
+            emotion = "happy"
+
         elif name == "book_consultation":
-            # Simulated booking for hackathon demo
-            result = {
-                "status": "confirmed",
-                "specialty": args["specialty"],
-                "date": "mardi prochain",
-                "time": "14h00",
-                "professional": "Dr. Martin",
-                "covered_by_alan": True,
-                "reimbursement": "100%",
-            }
+            result = _tool_book_consultation(args)
+            emotion = "encouraging"
+
         else:
             result = {"error": f"Unknown tool: {name}"}
+
     except Exception as e:
+        log.exception("Tool %s failed", name)
         result = {"error": f"Tool '{name}' failed: {e}"}
-    return json.dumps(result, default=str)
+
+    return json.dumps(result, default=str, ensure_ascii=False), emotion
+
+
+# ---------------------------------------------------------------------------
+# Individual tool implementations
+# ---------------------------------------------------------------------------
+
+
+def _tool_get_user_profile(patient: PatientContext, session: SessionData) -> dict:
+    """Return patient profile with connected devices and blood panel summary."""
+    if session.user_info is None:
+        session.user_info = _run_async(_thryve.get_user_info(patient.token))
+
+    info = session.user_info
+    profile: dict = {
+        "name": patient.name,
+        "age": patient.age,
+        "connected_devices": info.get("connectedSources", []),
+    }
+
+    # Add blood panel summary if cached
+    if session.blood_panel:
+        panel_summary = {}
+        for metric_name, values in session.blood_panel.items():
+            nums = _extract_values(values) if isinstance(values, list) else []
+            if nums:
+                panel_summary[metric_name] = {"latest": nums[-1], "count": len(nums)}
+        profile["blood_panel_summary"] = panel_summary
+
+    return profile
+
+
+def _tool_get_vitals(patient: PatientContext, session: SessionData, days: int) -> dict:
+    """Fetch vitals from Thryve, cache in session."""
+    if session.vitals is None or days != 7:
+        vitals = _run_async(_thryve.get_vitals(patient.token, days=days))
+        if days == 7:
+            session.vitals = vitals
+    else:
+        vitals = session.vitals
+
+    result: dict = {}
+    for metric_name, values in vitals.items():
+        nums = _extract_values(values)
+        if nums:
+            result[metric_name] = {
+                "latest": nums[-1],
+                "avg": round(mean(nums), 1),
+                "min": min(nums),
+                "max": max(nums),
+                "count": len(nums),
+                "values": [{"date": v.get("date"), "value": v["value"]} for v in values],
+            }
+        else:
+            result[metric_name] = {"latest": None, "count": 0, "values": []}
+
+    return result
+
+
+def _tool_get_blood_panel(patient: PatientContext, session: SessionData, days: int) -> dict:
+    """Fetch blood panel from Thryve, cache in session."""
+    if session.blood_panel is None:
+        session.blood_panel = _run_async(_thryve.get_blood_panel(patient.token, days=days))
+
+    result: dict = {}
+    for metric_name, values in session.blood_panel.items():
+        if isinstance(values, list) and values:
+            # Check if simulated
+            is_simulated = any(v.get("simulated") for v in values)
+            nums = _extract_values(values)
+            result[metric_name] = {
+                "latest": nums[-1] if nums else values[-1].get("value"),
+                "unit": values[-1].get("unit"),
+                "simulated": is_simulated,
+                "count": len(nums),
+            }
+    return result
+
+
+def _tool_get_burnout_score(patient: PatientContext, session: SessionData) -> dict:
+    """Compute burnout score from Thryve analytics + raw biometrics."""
+    burnout_data = _run_async(_thryve.get_burnout_metrics(patient.token, days=7))
+    burnout = compute_burnout(burnout_data)
+    session.burnout = burnout
+
+    return {
+        "score": burnout.score,
+        "level": burnout.level,
+        "source": burnout.source,
+        "components": burnout.components,
+        "signals": burnout.signals,
+    }
+
+
+def _tool_get_trend(patient: PatientContext, metric: str, days: int) -> dict:
+    """Compare recent (last 2 days) vs baseline for a metric."""
+    code = METRIC_CODES.get(metric)
+    if code is None:
+        return {"error": f"Unknown metric: {metric}. Known: {list(METRIC_CODES.keys())}"}
+
+    raw = _run_async(
+        _thryve.get_daily_values(
+            patient.token,
+            data_sources=[code],
+            start_date=None,  # let ThryveClient use default range
+            end_date=None,
+        )
+    )
+
+    from backend.thryve import ThryveClient as _Thryve
+
+    grouped = _Thryve._group_by_metric(raw)
+    values_list = grouped.get(metric, [])
+    nums = _extract_values(values_list)
+
+    if len(nums) < 3:
+        return {
+            "metric": metric,
+            "error": "Not enough data points for trend analysis",
+            "available_points": len(nums),
+        }
+
+    recent = nums[-2:]  # last 2 days
+    baseline = nums[:-2] if len(nums) > 2 else nums[:1]
+
+    recent_avg = mean(recent)
+    baseline_avg = mean(baseline)
+
+    if baseline_avg == 0:
+        pct_change = 0.0
+    else:
+        pct_change = round(((recent_avg - baseline_avg) / baseline_avg) * 100, 1)
+
+    if abs(pct_change) < 5:
+        direction = "stable"
+    elif pct_change > 0:
+        direction = "up"
+    else:
+        direction = "down"
+
+    return {
+        "metric": metric,
+        "recent_avg": round(recent_avg, 1),
+        "baseline_avg": round(baseline_avg, 1),
+        "pct_change": pct_change,
+        "direction": direction,
+        "recent_days": 2,
+        "baseline_days": len(baseline),
+    }
+
+
+def _tool_get_correlation(
+    patient: PatientContext, metric_a: str, metric_b: str, days: int
+) -> dict:
+    """Cross two signals to detect compound risk."""
+    code_a = METRIC_CODES.get(metric_a)
+    code_b = METRIC_CODES.get(metric_b)
+
+    if code_a is None or code_b is None:
+        unknown = [m for m in [metric_a, metric_b] if m not in METRIC_CODES]
+        return {"error": f"Unknown metric(s): {unknown}. Known: {list(METRIC_CODES.keys())}"}
+
+    raw = _run_async(
+        _thryve.get_daily_values(
+            patient.token,
+            data_sources=[code_a, code_b],
+        )
+    )
+
+    from backend.thryve import ThryveClient as _Thryve
+
+    grouped = _Thryve._group_by_metric(raw)
+    vals_a = _extract_values(grouped.get(metric_a, []))
+    vals_b = _extract_values(grouped.get(metric_b, []))
+
+    if len(vals_a) < 3 or len(vals_b) < 3:
+        return {
+            "metric_a": metric_a,
+            "metric_b": metric_b,
+            "error": "Not enough data points for correlation",
+        }
+
+    # Align to same length (use the shorter series)
+    n = min(len(vals_a), len(vals_b))
+    vals_a = vals_a[-n:]
+    vals_b = vals_b[-n:]
+
+    # Pearson correlation
+    avg_a = mean(vals_a)
+    avg_b = mean(vals_b)
+    cov = sum((a - avg_a) * (b - avg_b) for a, b in zip(vals_a, vals_b)) / n
+    std_a = (sum((a - avg_a) ** 2 for a in vals_a) / n) ** 0.5
+    std_b = (sum((b - avg_b) ** 2 for b in vals_b) / n) ** 0.5
+
+    if std_a == 0 or std_b == 0:
+        correlation = 0.0
+    else:
+        correlation = round(cov / (std_a * std_b), 3)
+
+    # Assess compound risk
+    # Define "degraded" thresholds per metric
+    thresholds = {
+        "hrv": lambda v: v < 30,
+        "resting_hr": lambda v: v > 80,
+        "sleep_quality": lambda v: v < 60,
+        "heart_rate_sleep": lambda v: v > 70,
+        "steps": lambda v: v < 5000,
+        "stress": lambda v: v > 70,
+    }
+
+    a_degraded = thresholds.get(metric_a, lambda _: False)(vals_a[-1])
+    b_degraded = thresholds.get(metric_b, lambda _: False)(vals_b[-1])
+    compound_risk = a_degraded and b_degraded
+
+    if abs(correlation) > 0.7:
+        strength = "strong"
+    elif abs(correlation) > 0.4:
+        strength = "moderate"
+    else:
+        strength = "weak"
+
+    return {
+        "metric_a": metric_a,
+        "metric_b": metric_b,
+        "correlation": correlation,
+        "strength": strength,
+        "a_latest": vals_a[-1],
+        "b_latest": vals_b[-1],
+        "a_degraded": a_degraded,
+        "b_degraded": b_degraded,
+        "compound_risk": compound_risk,
+        "data_points": n,
+    }
+
+
+def _tool_award_berries(action: str) -> dict:
+    """Award berries and return the result."""
+    try:
+        earned = award(action)
+        balance = total()
+        return {
+            "action": action,
+            "earned": earned,
+            "total_balance": balance,
+        }
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+def _tool_book_consultation(args: dict) -> dict:
+    """Simulated consultation booking via Alan."""
+    return {
+        "status": "confirmed",
+        "specialty": args["specialty"],
+        "date": "mardi prochain",
+        "time": "14h00",
+        "professional": "Dr. Martin",
+        "covered_by_alan": True,
+        "reimbursement": "100%",
+        "message": (
+            f"Rendez-vous {args['urgency']} pris avec un(e) {args['specialty']} "
+            f"pour : {args['reason']}"
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# System message builder
+# ---------------------------------------------------------------------------
 
 
 def build_system_message(
-    hours: int = 24,
-    user_profile: dict | None = None,
+    patient: PatientContext,
+    session: SessionData,
     weekly_checkup: bool = False,
 ) -> dict:
-    """Build the system message with current health context and optional user profile."""
-    if weekly_checkup:
-        hours = 168
-    summary = get_summary(hours)
+    """Build the system message with patient context and cached health data."""
+    # Build profile block
+    profile_parts = [f"Nom : {patient.name}"]
+    if patient.age:
+        profile_parts.append(f"Age : {patient.age} ans")
+    profile_str = "PROFIL PATIENT:\n" + "\n".join(f"- {p}" for p in profile_parts)
 
-    if not summary:
-        health_context = "No health data available yet. Ask the user to sync their health data."
-    else:
-        lines = []
-        for metric, stats in summary.items():
-            unit = stats.get("unit") or ""
-            lines.append(
-                f"- {metric}: avg={stats['avg']} {unit}, "
-                f"min={stats['min']}, max={stats['max']}, "
-                f"latest={stats['latest']}"
-                f" ({stats['count']} readings)"
-            )
-        health_context = "\n".join(lines)
+    # Build health context from cached session data
+    health_lines: list[str] = []
+    data_window = "7 derniers jours"
 
-    if user_profile:
-        profile_parts = []
-        if user_profile.get("age"):
-            profile_parts.append(f"Âge : {user_profile['age']} ans")
-        if user_profile.get("biological_sex"):
-            sex_label = {"male": "Homme", "female": "Femme", "other": "Autre"}.get(
-                user_profile["biological_sex"], "Non précisé"
-            )
-            profile_parts.append(f"Sexe : {sex_label}")
-        if user_profile.get("height"):
-            profile_parts.append(f"Taille : {user_profile['height']} cm")
-        if user_profile.get("weight"):
-            profile_parts.append(f"Poids : {user_profile['weight']} kg")
-        profile_str = "PROFIL UTILISATEUR:\n" + "\n".join(f"- {p}" for p in profile_parts)
+    if session.vitals:
+        for metric_name, values in session.vitals.items():
+            nums = _extract_values(values)
+            if nums:
+                health_lines.append(
+                    f"- {metric_name}: dernier={nums[-1]}, "
+                    f"moy={round(mean(nums), 1)}, "
+                    f"min={min(nums)}, max={max(nums)} "
+                    f"({len(nums)} mesures)"
+                )
+
+    if session.burnout:
+        b = session.burnout
+        health_lines.append(
+            f"- Score burnout: {b.score}/100 ({b.level})"
+        )
+        if b.signals:
+            health_lines.append(f"- Signaux: {', '.join(b.signals)}")
+
+    if session.blood_panel:
+        for metric_name, values in session.blood_panel.items():
+            if isinstance(values, list):
+                nums = _extract_values(values)
+                if nums:
+                    sim = " (simule)" if any(v.get("simulated") for v in values) else ""
+                    health_lines.append(f"- {metric_name}: {nums[-1]}{sim}")
+
+    if not health_lines:
+        health_context = (
+            "Pas encore de donnees. Utilise get_vitals ou get_burnout_score "
+            "pour recuperer les donnees du patient."
+        )
     else:
-        profile_str = "PROFIL UTILISATEUR: non disponible"
+        health_context = "\n".join(health_lines)
 
     checkup_block = WEEKLY_CHECKUP_BLOCK if weekly_checkup else NORMAL_BLOCK
 
     return {
         "role": "system",
         "content": SYSTEM_TEMPLATE.format(
-            hours=hours,
-            health_context=health_context,
             user_profile=profile_str,
+            health_context=health_context,
+            data_window=data_window,
             checkup_block=checkup_block,
         ),
     }
 
 
+# ---------------------------------------------------------------------------
+# Prefetch session data
+# ---------------------------------------------------------------------------
+
+
+async def prefetch_session(patient: PatientContext, session: SessionData) -> None:
+    """Fetch vitals and burnout metrics in parallel, populate session cache.
+
+    Call this once at the start of a conversation so the system message
+    and tool calls can read from cache.
+    """
+    vitals_task = _thryve.get_vitals(patient.token, days=7)
+    burnout_task = _thryve.get_burnout_metrics(patient.token, days=7)
+
+    vitals, burnout_data = await asyncio.gather(vitals_task, burnout_task)
+    session.vitals = vitals
+    session.burnout = compute_burnout(burnout_data)
+
+
+# ---------------------------------------------------------------------------
+# Chat with tools (non-streaming, full response)
+# ---------------------------------------------------------------------------
+
 _MAX_TOOL_ITERATIONS = 10
 
 
-def chat_with_tools(client: Mistral, messages: list[dict]) -> str:
-    """Send a message to the LLM with tool use support. Returns the final text response."""
+def chat_with_tools(
+    client: Mistral,
+    messages: list[dict],
+    patient: PatientContext,
+    session: SessionData,
+) -> tuple[str, list[str]]:
+    """Send a message to the LLM with tool use. Returns (text, emotions).
+
+    The emotions list contains emotion hints emitted during tool execution,
+    ordered chronologically.
+    """
+    emotions: list[str] = []
+
     try:
         response = client.chat.complete(
             model=LLM_MODEL,
@@ -359,7 +820,12 @@ def chat_with_tools(client: Mistral, messages: list[dict]) -> str:
             tools=TOOLS,
         )
     except Exception:
-        return "Désolé, je n'arrive pas à me connecter pour le moment. Réessaie dans quelques instants."
+        log.exception("LLM call failed")
+        return (
+            "Desole, je n'arrive pas a me connecter pour le moment. "
+            "Reessaie dans quelques instants.",
+            [],
+        )
 
     choice = response.choices[0]
     iterations = 0
@@ -371,12 +837,14 @@ def chat_with_tools(client: Mistral, messages: list[dict]) -> str:
 
         for tc in tool_calls:
             args = json.loads(tc.function.arguments)
-            result = _execute_tool(tc.function.name, args)
+            log.info("Tool call: %s(%s)", tc.function.name, args)
+            result_json, emotion = execute_tool(tc.function.name, args, patient, session)
+            emotions.append(emotion)
             messages.append(
                 {
                     "role": "tool",
                     "name": tc.function.name,
-                    "content": result,
+                    "content": result_json,
                     "tool_call_id": tc.id,
                 }
             )
@@ -388,10 +856,24 @@ def chat_with_tools(client: Mistral, messages: list[dict]) -> str:
                 tools=TOOLS,
             )
         except Exception:
-            return "Désolé, je n'arrive pas à me connecter pour le moment. Réessaie dans quelques instants."
+            log.exception("LLM call failed during tool loop")
+            return (
+                "Desole, je n'arrive pas a me connecter pour le moment. "
+                "Reessaie dans quelques instants.",
+                emotions,
+            )
         choice = response.choices[0]
 
-    return choice.message.content
+    # Determine final emotion based on burnout score if available
+    if session.burnout and not emotions:
+        emotions.append(_emotion_for_burnout(session.burnout.score))
+
+    return choice.message.content, emotions
+
+
+# ---------------------------------------------------------------------------
+# Streaming response (text only, no tool use)
+# ---------------------------------------------------------------------------
 
 
 def stream_response(client: Mistral, messages: list[dict]) -> Iterator[str]:

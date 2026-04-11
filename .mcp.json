@@ -1,3 +1,17 @@
 {
-  "mcpServers": {}
+  "mcpServers": {
+    "thryve": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        ".",
+        "python",
+        "-m",
+        "backend.thryve_mcp"
+      ],
+      "env": {}
+    }
+  }
 }

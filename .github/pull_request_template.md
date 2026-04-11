@@ -12,7 +12,7 @@
 - [ ] ci
 
 ## Scope
-<!-- Which module(s) touched: brain, nudge, berries, store, server, audio, tts, stt, viz, cli, ios, watch, healthkit, wiki, config -->
+<!-- Which module(s) touched: brain, coach, memory, nudge, server, tts, stt, config, front, wiki -->
 
 ## Breaking changes
 - [ ] This PR introduces breaking changes

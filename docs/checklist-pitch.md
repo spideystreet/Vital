@@ -1,3 +1,5 @@
+> **⚠️ SUPERSEDED (2026-04-11).** Reflects the pre-pivot "listens and measures" framing. New pitch thesis: proactive life coach with persistent memory → healthcare cost reduction via self-adjusted daily protocols. See `HANDOFF.md` "What V.I.T.A.L is" + "Three surfaces" + "Demo script".
+
 # Pitch Checklist
 
 ## Story

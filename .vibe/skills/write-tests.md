@@ -16,26 +16,36 @@
 
 ## What to test per module
 
-### health_store.py
-- All 20 metrics insert and retrieve correctly
-- `get_summary()` returns correct avg/min/max/latest
-- `get_trend()` returns correct direction (up/down/stable) and percentage
-- `get_correlation()` returns valid Pearson coefficient
-- `compare_periods()` returns correct averages for both periods
-- Edge cases: empty DB, unknown metric, zero readings
+### thryve.py
+- Daily/epoch fetch helpers parse Thryve payloads into expected shapes
+- Unknown metric codes are ignored gracefully
+- Auth headers are attached (Basic + endUserId)
+- Edge cases: empty `dynamicValues`, missing sections, non-200 responses
 
-### brain.py
-- `build_system_message()` includes health context and user profile
-- `build_system_message()` without profile falls back to "non disponible"
-- `_execute_tool()` dispatches correctly to each of the 6 tools
-- `_execute_tool()` returns valid JSON for all tools
-- `_execute_tool()` with unknown tool returns error
+### memory.py
+- `read_memory(user_id)` returns empty sections dict when file is missing
+- `append_memory(user_id, section, entry)` creates the file on first write
+- Parser tolerates missing sections and preserves unknown headings
+- `upsert_baseline` updates an existing metric row instead of duplicating
+
+### brain.py / coach.py
+- `build_system_message()` includes health context, profile, and memory excerpt
+- `build_system_message()` without profile/memory falls back to safe defaults
+- `execute_tool()` dispatches correctly to each of the 9 tools
+- `_execute_tool()` returns valid JSON for all tools, error for unknown tool
+- `read_memory` / `append_memory` round-trip through `memory.py`
+
+### burnout.py / nudge.py
+- Burnout score handles empty baselines (no division by zero)
+- Nudge detector returns `{ triggered: false }` when no threshold is crossed
+- Trigger reasons reference the correct metric
 
 ### health_server.py
-- `POST /health` accepts valid payload, returns count
-- `POST /health` rejects empty metrics list
-- `GET /health/summary` returns aggregated data
-- `GET /health/ping` returns alive
+- `GET /api/dashboard/{patient_id}` returns `{ stats, generated_at }` with delta_pct = 0.0 when baseline is missing
+- `POST /api/coach/brief` streams `brief` → `audio` → `done` SSE events
+- `POST /api/coach/reply` stores the turn and returns `{ ok: true }`
+- `GET /api/notifications/stream` emits `ready` then holds the connection open
+- `/docs` and `/openapi.json` are reachable (FastAPI auto-exposed)
 
 ## After writing
 
