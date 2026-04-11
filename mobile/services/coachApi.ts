@@ -35,7 +35,7 @@ async function fetchRespondSSE(sessionId: string, transcript: string): Promise<s
   const res = await fetch(`${API_BASE_URL}/api/checkup/respond`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, transcript }),
+    body: JSON.stringify({ session_id: sessionId, transcript, no_tts: true }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
