@@ -37,13 +37,13 @@ function OnboardingIntro({ onDone }: { onDone: () => void }) {
 
 type IntakeField = { key: string; label: string; icon: string; value: string | null };
 
+// Maps backend keys → display meta (only fields we want to show in the preview)
 const FIELD_META: Record<string, { label: string; icon: string }> = {
-  first_name:  { label: 'Prénom',     icon: '👤' },
-  last_name:   { label: 'Nom',        icon: '👤' },
-  age:         { label: 'Âge',        icon: '🎂' },
-  sex:         { label: 'Sexe',       icon: '⚥'  },
-  weight_kg:   { label: 'Poids',      icon: '⚖️' },
-  height_cm:   { label: 'Taille',     icon: '📏' },
+  age:        { label: 'Âge',    icon: '🎂' },
+  sex:        { label: 'Sexe',   icon: '⚥'  },
+  weight_kg:  { label: 'Poids',  icon: '⚖️' },
+  height_cm:  { label: 'Taille', icon: '📏' },
+  job:        { label: 'Métier', icon: '💼' },
 };
 
 function formatValue(key: string, value: string | number | null): string {
@@ -58,13 +58,22 @@ function formatValue(key: string, value: string | number | null): string {
   return String(value);
 }
 
+// Backend returns nested categories: { session_id, categories: [{key, fields: [{key, value}]}] }
 function normalizeForm(data: any): IntakeField[] {
-  // Handle {key: value} object form
-  const formObj: Record<string, any> = data?.form ?? data ?? {};
+  const formSource = data?.form ?? data ?? {};
+  // Build a flat key→value map from the nested categories array
+  const flat: Record<string, any> = {};
+  if (Array.isArray(formSource?.categories)) {
+    for (const cat of formSource.categories) {
+      for (const f of cat.fields ?? []) {
+        flat[f.key] = f.value;
+      }
+    }
+  }
   return Object.keys(FIELD_META).map((key) => ({
     key,
     ...FIELD_META[key],
-    value: formObj[key] != null ? formatValue(key, formObj[key]) : null,
+    value: flat[key] != null ? formatValue(key, flat[key]) : null,
   }));
 }
 
@@ -140,13 +149,13 @@ function VoiceIntake({ onDone }: { onDone: (firstName: string) => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId }),
       });
-      const firstName = fields.find((f) => f.key === 'first_name')?.value ?? 'toi';
-      onDone(firstName);
+      const jobLabel = fields.find((f) => f.key === 'job')?.value;
+      onDone(jobLabel ?? 'toi');
     } catch (e: any) { setErrorMsg(e.message); setPhase('error'); }
   }
 
   const filledCount = fields.filter((f) => f.value !== null).length;
-  const canConfirm = fields.find((f) => f.key === 'first_name')?.value !== null;
+  const canConfirm = fields.some((f) => f.value !== null);
   const isRecording = phase === 'recording';
   const isProcessing = phase === 'processing' || phase === 'init';
 
