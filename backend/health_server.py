@@ -441,6 +441,94 @@ async def nudge_check(patient_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Coach endpoints (Surface 1 — morning brief)
+# ---------------------------------------------------------------------------
+
+
+class BriefRequest(BaseModel):
+    patient_id: str
+
+
+@app.post("/api/coach/brief")
+async def post_coach_brief(req: BriefRequest) -> StreamingResponse:
+    """Generate the morning brief and stream it via SSE.
+
+    Streams three events:
+    - event: brief  — full BriefPayload as JSON (UI renders the card)
+    - event: audio  — base64 audio chunks from Voxtral TTS of raw_text
+    - event: done   — terminator
+    """
+    patient = _PATIENTS_BY_ID.get(req.patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Unknown patient")
+
+    patient_ctx = PatientContext(
+        token=patient.get("token", patient["id"]),
+        name=patient["name"],
+        age=patient.get("age"),
+    )
+
+    client = _get_mistral()
+
+    async def _stream():
+        from backend import coach as _coach
+
+        payload = await _coach.generate_morning_brief(client, patient_ctx)
+
+        yield f"event: brief\ndata: {json.dumps(payload.to_dict(), ensure_ascii=False)}\n\n"
+
+        # stream_voice_events expects an Iterator[str] of tokens; wrap raw_text in one.
+        loop = asyncio.get_event_loop()
+        try:
+            def _text_iter():
+                yield payload.raw_text
+
+            audio_chunks = await loop.run_in_executor(
+                None,
+                lambda: [
+                    payload_bytes
+                    for kind, payload_bytes in stream_voice_events(
+                        _text_iter(), voice_id=DEMO_ASSISTANT_VOICE
+                    )
+                    if kind == "audio"
+                ],
+            )
+            for chunk_bytes in audio_chunks:
+                b64 = base64.b64encode(chunk_bytes).decode("ascii")
+                yield f"event: audio\ndata: {json.dumps({'base64_pcm_chunk': b64})}\n\n"
+        except Exception:
+            logger.exception("TTS streaming failed in /api/coach/brief")
+
+        yield "event: done\ndata: {}\n\n"
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
+
+
+class ReplyRequest(BaseModel):
+    patient_id: str
+    text: str
+
+
+@app.post("/api/coach/reply")
+async def post_coach_reply(req: ReplyRequest) -> dict:
+    """Record the user's spoken/typed reply to the morning brief."""
+    patient = _PATIENTS_BY_ID.get(req.patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Unknown patient")
+
+    patient_ctx = PatientContext(
+        token=patient.get("token", patient["id"]),
+        name=patient["name"],
+        age=patient.get("age"),
+    )
+
+    from backend import coach as _coach
+
+    await _coach.record_user_reply(patient_ctx, req.text)
+    return {"ok": True, "stored": req.text}
+
+
+# ---------------------------------------------------------------------------
 # Legacy endpoints (kept for HealthKit + compat)
 # ---------------------------------------------------------------------------
 
