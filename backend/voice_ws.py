@@ -19,7 +19,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from mistralai.client import Mistral
 from mistralai.client.models import AudioFormat
 
-from backend.brain import build_system_message, stream_response
+from backend.brain import PatientContext, SessionData, build_system_message, stream_response
 from backend.config import DEMO_ASSISTANT_VOICE, MISTRAL_API_KEY, REALTIME_STT_MODEL
 from backend.voxtral import prewarm_tts, stream_voice_events
 
@@ -114,7 +114,11 @@ async def handle_voice_ws(ws: WebSocket) -> None:
     client = Mistral(api_key=MISTRAL_API_KEY)
 
     # Pre-build system message once at connection time (avoid DB hit per turn)
-    system_msg = await loop.run_in_executor(None, lambda: build_system_message(hours=24))
+    _ws_patient = PatientContext(token="", name="user")
+    _ws_session = SessionData()
+    system_msg = await loop.run_in_executor(
+        None, lambda: build_system_message(_ws_patient, _ws_session)
+    )
 
     # Pre-warm TTS TLS connection once at session start (keepalive_expiry=60s keeps it warm)
     loop.run_in_executor(None, prewarm_tts)

@@ -9,7 +9,8 @@ A **proactive life coach** based on wearable health data that:
 4. Runs a **daily morning brief** with diagnosis + memory callback + adaptive protocol + one question. See `backend/coach.py`.
 5. Exposes a **stats dashboard + chat-with-your-data** surface: each stat shows delta vs personal baseline plus an LLM insight phrase. Tap a stat to open the chat with that context pre-loaded.
 6. Sends **memory-driven notifications** (silent, no TTS) when a biometric deviates ≥2σ from the user's baseline, with messages that reference past events. See `backend/nudge.py`.
-7. Web app (frontend/) with Python/FastAPI backend. Three surfaces share one brain and one memory spine.
+7. **Vocal onboarding (Surface 0)** — first-run flow that collects ~15 high-signal answers by voice and seeds the memory file (Baselines + Context). See `backend/onboarding.py`.
+8. Web app (frontend/) with Python/FastAPI backend. Three durable surfaces + one-time onboarding share one brain and one memory spine.
 
 ## Architecture
 
@@ -43,6 +44,8 @@ backend/                     # Python backend
 ├── thryve.py                # Thryve Health API client (async, two-header auth)
 ├── health_server.py         # FastAPI endpoints + SSE streaming
 ├── nudge.py                 # Memory-driven z-score deviation detector
+├── onboarding.py            # Vocal onboarding session (Surface 0) — writes initial memory
+├── onboarding_questions.py  # 15 high-signal question bank (Alan Precision)
 ├── thryve_mcp.py            # Thryve MCP server (dev tooling)
 └── seed_data.py             # Test data generator
 data/memory/                 # Per-user markdown memory files (gitignored except demo profile)
@@ -86,6 +89,7 @@ brain.py exposes 9 tools to Mistral Small via function calling:
 | `server` | health_server.py, API endpoints, SSE |
 | `config` | config.py, env vars |
 | `nudge` | nudge.py, memory-driven notification detector |
+| `onboarding` | onboarding.py, onboarding_questions.py, first-run vocal flow |
 | `front` | frontend/ web app |
 
 ## Commands

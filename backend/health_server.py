@@ -18,9 +18,12 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from pathlib import Path as _Path
+from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,7 +32,6 @@ from mistralai.client import Mistral
 from pydantic import BaseModel
 from uvicorn import run as uvicorn_run
 
-from backend.berries import award, init_berries, total
 from backend.brain import (
     PatientContext,
     SessionData,
@@ -42,6 +44,7 @@ from backend.config import (
     HEALTH_SERVER_HOST,
     HEALTH_SERVER_PORT,
     MISTRAL_API_KEY,
+    require_thryve_credentials,
 )
 from backend.guardrail import check_response
 from backend.health_store import init_db, insert_metrics
@@ -55,13 +58,43 @@ logger = logging.getLogger("backend.server")
 # Patient registry (hardcoded for hackathon demo)
 # ---------------------------------------------------------------------------
 
+# Pre-made Thryve data profile — see docs/thryve-hackathon-guide.md
+# Default: "Active Gym Guy" (Whoop) — rich HRV data fits the demo narrative.
+# Override via env var if a different profile is chosen at demo time.
+_DEMO_THRYVE_END_USER_ID = os.environ.get(
+    "VITAL_DEMO_THRYVE_TOKEN",
+    "2bfaa7e6f9455ceafa0a59fd5b80496c",
+)
+
 PATIENTS = [
-    {"id": "patient-1", "name": "Sophie Martin", "age": 34, "token": ""},
-    {"id": "patient-2", "name": "Lucas Dubois", "age": 28, "token": ""},
-    {"id": "patient-3", "name": "Emma Bernard", "age": 42, "token": ""},
+    {
+        "id": "patient-1",
+        "name": "Sophie Martin",  # Persona name — the Thryve profile is anonymous
+        "age": 34,
+        "token": _DEMO_THRYVE_END_USER_ID,
+    },
 ]
 
 _PATIENTS_BY_ID: dict[str, dict] = {p["id"]: p for p in PATIENTS}
+
+# ---------------------------------------------------------------------------
+# Notification broadcast — in-process pub/sub for Surface 3
+# ---------------------------------------------------------------------------
+
+_notification_subscribers: set[asyncio.Queue] = set()
+
+
+async def _broadcast_notification(payload: dict) -> None:
+    """Push a notification payload to every subscribed SSE stream."""
+    dead: list[asyncio.Queue] = []
+    for queue in _notification_subscribers:
+        try:
+            queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            dead.append(queue)
+    for q in dead:
+        _notification_subscribers.discard(q)
+
 
 # ---------------------------------------------------------------------------
 # Session management (in-memory)
@@ -123,9 +156,9 @@ def _get_thryve() -> ThryveClient:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    require_thryve_credentials()
     init_db()
-    init_berries()
-    logger.info("Database and berries ledger initialized")
+    logger.info("Database initialized")
     yield
 
 
@@ -186,7 +219,7 @@ async def start_checkup(req: StartCheckupRequest):
         age=patient.get("age"),
     )
     session_data = SessionData()
-    system_msg = build_system_message(patient_ctx, session_data, weekly_checkup=True)
+    system_msg = build_system_message(patient_ctx, session_data)
 
     session = SessionState(
         session_id=session_id,
@@ -229,7 +262,7 @@ async def checkup_audio(audio: UploadFile = File(...)):
 async def checkup_respond(req: RespondRequest):
     """Process a user transcript and return SSE stream with full checkup flow.
 
-    Event types: emotion, health_data, text, audio, burnout_score, protocol, berries, done.
+    Event types: emotion, health_data, text, audio, burnout_score, protocol, done.
     """
     session = sessions.get(req.session_id)
     if session is None:
@@ -363,21 +396,7 @@ async def checkup_respond(req: RespondRequest):
         protocol_actions = _extract_protocol(final_text, burnout_result)
         yield sse_event("protocol", {"actions": protocol_actions})
 
-        # Step i: berries (award on checkup turn >= 3)
-        if session.turn_count >= 3:
-            try:
-                amount = await loop.run_in_executor(None, award, "weekly_checkup")
-                berries_total = await loop.run_in_executor(None, total)
-                yield sse_event("emotion", {"state": "happy", "label": "Bravo !"})
-                yield sse_event("berries", {
-                    "amount": amount,
-                    "total": berries_total,
-                    "reason": "Bilan hebdomadaire complété",
-                })
-            except Exception:
-                logger.exception("Berries award failed")
-
-        # Step j: done
+        # Step i: done
         yield sse_event("done", {})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -413,14 +432,11 @@ async def patient_summary(patient_id: str):
     except Exception:
         logger.exception("Failed to fetch burnout metrics for %s", patient_id)
 
-    berries_total = await loop.run_in_executor(None, total)
-
     return {
         "burnout_score": burnout_result.score if burnout_result else None,
         "level": burnout_result.level if burnout_result else None,
         "protocol": _extract_protocol(None, burnout_result),
         "last_checkup": None,  # TODO: track from sessions
-        "berries_total": berries_total,
     }
 
 
@@ -443,6 +459,267 @@ async def nudge_check(patient_id: str):
     except Exception:
         logger.exception("Nudge evaluation failed")
         return {"triggered": False, "message": None, "signals": []}
+
+
+# ---------------------------------------------------------------------------
+# Coach endpoints (Surface 1 — morning brief)
+# ---------------------------------------------------------------------------
+
+
+class BriefRequest(BaseModel):
+    patient_id: str
+
+
+@app.post("/api/coach/brief")
+async def post_coach_brief(req: BriefRequest) -> StreamingResponse:
+    """Generate the morning brief and stream it via SSE.
+
+    Streams three events:
+    - event: brief  — full BriefPayload as JSON (UI renders the card)
+    - event: audio  — base64 audio chunks from Voxtral TTS of raw_text
+    - event: done   — terminator
+    """
+    patient = _PATIENTS_BY_ID.get(req.patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Unknown patient")
+
+    patient_ctx = PatientContext(
+        token=patient.get("token", patient["id"]),
+        name=patient["name"],
+        age=patient.get("age"),
+    )
+
+    client = _get_mistral()
+
+    async def _stream():
+        from backend import coach as _coach
+
+        payload = await _coach.generate_morning_brief(client, patient_ctx)
+
+        yield f"event: brief\ndata: {json.dumps(payload.to_dict(), ensure_ascii=False)}\n\n"
+
+        # stream_voice_events expects an Iterator[str] of tokens; wrap raw_text in one.
+        loop = asyncio.get_event_loop()
+        try:
+            def _text_iter():
+                yield payload.raw_text
+
+            audio_chunks = await loop.run_in_executor(
+                None,
+                lambda: [
+                    payload_bytes
+                    for kind, payload_bytes in stream_voice_events(
+                        _text_iter(), voice_id=DEMO_ASSISTANT_VOICE
+                    )
+                    if kind == "audio"
+                ],
+            )
+            for chunk_bytes in audio_chunks:
+                b64 = base64.b64encode(chunk_bytes).decode("ascii")
+                yield f"event: audio\ndata: {json.dumps({'base64_pcm_chunk': b64})}\n\n"
+        except Exception:
+            logger.exception("TTS streaming failed in /api/coach/brief")
+
+        yield "event: done\ndata: {}\n\n"
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
+
+
+class ReplyRequest(BaseModel):
+    patient_id: str
+    text: str
+
+
+@app.post("/api/coach/reply")
+async def post_coach_reply(req: ReplyRequest) -> dict:
+    """Record the user's spoken/typed reply to the morning brief."""
+    patient = _PATIENTS_BY_ID.get(req.patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Unknown patient")
+
+    patient_ctx = PatientContext(
+        token=patient.get("token", patient["id"]),
+        name=patient["name"],
+        age=patient.get("age"),
+    )
+
+    from backend import coach as _coach
+
+    await _coach.record_user_reply(patient_ctx, req.text)
+    return {"ok": True, "stored": req.text}
+
+
+@app.get("/api/dashboard/{patient_id}")
+async def get_dashboard(patient_id: str) -> dict:
+    """Return the dashboard payload: stats + LLM-generated insights."""
+    patient = _PATIENTS_BY_ID.get(patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Unknown patient")
+
+    patient_ctx = PatientContext(
+        token=patient.get("token", patient["id"]),
+        name=patient["name"],
+        age=patient.get("age"),
+    )
+
+    client = _get_mistral()
+
+    from backend import coach as _coach
+
+    payload = await _coach.generate_dashboard(client, patient_ctx)
+    return payload.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# Surface 3 — notification SSE stream + dev trigger
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/notifications/stream")
+async def notifications_stream() -> StreamingResponse:
+    """Long-lived SSE stream — frontend subscribes once and receives every nudge."""
+    queue: asyncio.Queue = asyncio.Queue(maxsize=32)
+    _notification_subscribers.add(queue)
+
+    async def _reader():
+        try:
+            yield "event: ready\ndata: {}\n\n"
+            while True:
+                payload = await queue.get()
+                yield f"event: notification\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        finally:
+            _notification_subscribers.discard(queue)
+
+    return StreamingResponse(_reader(), media_type="text/event-stream")
+
+
+class FireNotificationRequest(BaseModel):
+    patient_id: str
+    metric: str
+    value: float
+
+
+@app.post("/dev/fire-notification")
+async def dev_fire_notification(req: FireNotificationRequest) -> dict:
+    """DEV ONLY — manually trigger a notification for the demo."""
+    patient = _PATIENTS_BY_ID.get(req.patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Unknown patient")
+
+    patient_ctx = PatientContext(
+        token=patient.get("token", patient["id"]),
+        name=patient["name"],
+        age=patient.get("age"),
+    )
+
+    client = Mistral(api_key=MISTRAL_API_KEY)
+
+    from backend import nudge as _nudge
+
+    message = await _nudge.fire_manual(client, patient_ctx, req.metric, req.value)
+    if message is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No baseline stored for metric '{req.metric}' — cannot fire",
+        )
+
+    await _broadcast_notification(message.to_dict())
+    return {"fired": True, "message": message.to_dict()}
+
+
+# ---------------------------------------------------------------------------
+# Onboarding endpoints (Surface 0 — one-time vocal onboarding)
+# ---------------------------------------------------------------------------
+
+from backend import onboarding as onboarding_module  # noqa: E402
+from backend.onboarding_questions import QUESTIONS as _ONBOARDING_QUESTIONS  # noqa: E402
+
+
+class OnboardingAnswerPayload(BaseModel):
+    question_id: str
+    value: Any
+
+
+def _resolve_patient_ctx(patient_id: str) -> PatientContext:
+    patient = _PATIENTS_BY_ID.get(patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Unknown patient")
+    return PatientContext(
+        token=patient.get("token", patient["id"]),
+        name=patient["name"],
+        age=patient.get("age"),
+    )
+
+
+def _step_to_payload(step: onboarding_module.OnboardingStep) -> dict:
+    q = step.question
+    return {
+        "index": step.index,
+        "total": step.total,
+        "done": step.done,
+        "question": {
+            "id": q.id,
+            "section": q.section,
+            "text_fr": q.text_fr,
+            "text_en": q.text_en,
+            "field": q.field,
+            "type": q.type,
+            "enum_values": list(q.enum_values),
+        },
+    }
+
+
+@app.post("/api/onboarding/start/{patient_id}")
+async def onboarding_start(patient_id: str) -> dict:
+    patient_ctx = _resolve_patient_ctx(patient_id)
+    step = onboarding_module.start_session(patient_ctx.token)
+    return _step_to_payload(step)
+
+
+@app.post("/api/onboarding/answer/{patient_id}")
+async def onboarding_answer(patient_id: str, payload: OnboardingAnswerPayload) -> dict:
+    patient_ctx = _resolve_patient_ctx(patient_id)
+    try:
+        step = onboarding_module.record_answer(
+            patient_ctx.token, payload.question_id, payload.value
+        )
+    except onboarding_module.OnboardingError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return _step_to_payload(step)
+
+
+@app.post("/api/onboarding/finalize/{patient_id}")
+async def onboarding_finalize(patient_id: str) -> dict:
+    patient_ctx = _resolve_patient_ctx(patient_id)
+    try:
+        onboarding_module.finalize(patient_ctx.token)
+    except onboarding_module.OnboardingError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return {"ok": True, "memory_file": f"data/memory/{patient_ctx.token}.md"}
+
+
+@app.post("/dev/onboarding/seed/{patient_id}")
+async def dev_onboarding_seed(
+    patient_id: str,
+    seed_file: str = "pierre_onboarding.json",
+) -> dict:
+    """Fill remaining onboarding answers from a seed JSON, then finalize. Dev-only."""
+    patient_ctx = _resolve_patient_ctx(patient_id)
+    seed_path = _Path("data/seeds") / seed_file
+    if not seed_path.exists():
+        raise HTTPException(status_code=404, detail=f"seed file not found: {seed_path}")
+    seed = json.loads(seed_path.read_text())
+    if patient_ctx.token not in onboarding_module._SESSIONS:
+        onboarding_module.start_session(patient_ctx.token)
+    session = onboarding_module._SESSIONS[patient_ctx.token]
+    for q in _ONBOARDING_QUESTIONS:
+        if q.id not in session and q.field in seed:
+            session[q.id] = seed[q.field]
+    try:
+        onboarding_module.finalize(patient_ctx.token)
+    except onboarding_module.OnboardingError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return {"ok": True, "seeded_from": str(seed_path)}
 
 
 # ---------------------------------------------------------------------------

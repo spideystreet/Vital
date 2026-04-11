@@ -1,0 +1,17 @@
+{
+  "age": 34,
+  "sex": "male",
+  "weight_kg": 78,
+  "height_cm": 182,
+  "job": "product manager",
+  "weekly_endurance_hours": 4,
+  "avg_sleep_hours": 6,
+  "sitting_hours_per_day": 9,
+  "smoker": false,
+  "alcohol_frequency": "weekly",
+  "sleep_satisfaction": 5,
+  "dominant_emotion_30d": "frustration",
+  "work_mental_impact": 8,
+  "family_cvd": true,
+  "current_medications": "none"
+}

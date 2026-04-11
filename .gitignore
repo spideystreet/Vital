@@ -26,6 +26,10 @@ mobile/.env
 .firecrawl/
 
 # ── Data ────────────────────────────────────────────────
+# Per-user memory files — gitignored by default, except the chosen demo profile.
+# Task 9 adjusts the un-ignore line if a profile other than the default is chosen.
+data/memory/*.md
+!data/memory/2bfaa7e6f9455ceafa0a59fd5b80496c.md
 
 # ── Tooling / internal ─────────────────────────────────
 .vibe/tasks/

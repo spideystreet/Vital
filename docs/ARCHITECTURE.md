@@ -72,6 +72,7 @@ V.I.T.A.L is a **proactive life coach with persistent memory**. One brain, one m
 
 | Surface | Entry point | Owning module |
 |---|---|---|
+| Vocal onboarding (Surface 0, one-time) | `POST /api/onboarding/start/{patient_id}` → `.../answer` → `.../finalize` | `onboarding.start_session()` / `record_answer()` / `finalize()` |
 | Morning brief (proactive) | `POST /api/coach/brief` → SSE | `coach.generate_morning_brief()` |
 | Morning brief reply | `POST /api/coach/reply` | `coach.record_user_reply()` |
 | Stats dashboard (landing) | `GET /api/dashboard/{patient_id}` | `coach.generate_dashboard()` |
@@ -87,6 +88,10 @@ V.I.T.A.L is a **proactive life coach with persistent memory**. One brain, one m
 | `GET`  | `/api/dashboard/{patient_id}` | Surface 2 — stats + LLM insights JSON (one round trip) |
 | `GET`  | `/api/notifications/stream` | Surface 3 — long-lived SSE subscribe channel |
 | `POST` | `/dev/fire-notification` | Demo fallback — manually trigger a notification |
+| `POST` | `/api/onboarding/start/{patient_id}` | Surface 0 — begin vocal onboarding session |
+| `POST` | `/api/onboarding/answer/{patient_id}` | Surface 0 — record one answer, advance to next question |
+| `POST` | `/api/onboarding/finalize/{patient_id}` | Surface 0 — seed `data/memory/<patient_id>.md` with Baselines + Context |
+| `POST` | `/dev/onboarding/seed/{patient_id}` | Demo fallback — pre-fill the session from `data/seeds/pierre_onboarding.json` |
 | `GET`  | `/api/patients` | Patient registry (demo) |
 | `GET`  | `/health/ping` | Liveness |
 | `GET`  | `/docs` | FastAPI Swagger UI (auto from Pydantic) |
@@ -180,6 +185,8 @@ Design choice: silent. No TTS on notifications. An interrupting voice is annoyin
 | `backend/coach.py` | `generate_morning_brief()`, `generate_dashboard()`, `record_user_reply()` |
 | `backend/burnout.py` | Burnout score computation |
 | `backend/nudge.py` | Memory-driven deviation detector, `fire_manual()` for demo |
+| `backend/onboarding.py` | Vocal onboarding session (start / answer / finalize) — writes initial memory file |
+| `backend/onboarding_questions.py` | 15-question bank (pure data) sourced from the Alan Precision questionnaire |
 | `backend/guardrail.py` | Nebius Llama Guard 3 check |
 | `backend/voxtral.py` | STT batch + streaming TTS |
 | `backend/health_server.py` | FastAPI app, endpoints, SSE helpers, notification broadcast |
@@ -190,7 +197,7 @@ Design choice: silent. No TTS on notifications. An interrupting voice is annoyin
 
 - `backend/health_store.py` — PostgreSQL store from the pre-pivot era. Memory spine replaces it for coaching data; Thryve is the source of truth for biometrics.
 - `backend/voice_ws.py` — Realtime WebSocket voice pipeline. The pivot uses SSE-only. File left in place but unreferenced by the new endpoints.
-- `backend/berries.py` — **being deleted** along with the `award_berries` tool. Rewards loop is orthogonal to the coaching thesis.
+- `backend/berries.py` — **deleted** during the proactive coach pivot along with the `award_berries` tool. Rewards loop was orthogonal to the coaching thesis.
 
 ## Key constraints
 

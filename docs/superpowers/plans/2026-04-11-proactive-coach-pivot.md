@@ -2855,6 +2855,624 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
+## Task 11: Vocal onboarding flow (Surface 0) — question bank + session endpoint + memory seeder
+
+Adds the one-time vocal onboarding flow that collects a patient's profile by voice the first time they open the app, then writes the initial `data/memory/<endUserId>.md` with Baselines + Context sections derived from the answers. This is Surface 0 in the spec. The frontend routes to this view when the patient's memory file is missing.
+
+**Scope discipline for this task:** ~15 high-signal questions from the Alan Precision questionnaire, kept as data in `backend/onboarding_questions.py`. No DB, no separate ORM, session state lives in a module-level dict keyed by `endUserId` for the duration of the flow. Voxtral STT and Mistral Small are already wired — we reuse `backend/voxtral.py` and the same Mistral client that `brain.py` uses.
+
+**Files:**
+- Create: `backend/onboarding_questions.py`
+- Create: `backend/onboarding.py`
+- Create: `data/seeds/pierre_onboarding.json`
+- Create: `tests/test_onboarding.py`
+- Modify: `backend/health_server.py` (add 3 endpoints)
+- Modify: `docs/ARCHITECTURE.md` (add Surface 0 + 3 endpoints)
+- Modify: `CLAUDE.md` (add onboarding module to project layout + commit scope `onboarding`)
+- Modify: `HANDOFF.md` (add onboarding to demo script + API contract — note: gitignored, local only)
+
+- [ ] **Step 11.1: Write the question bank**
+
+Create `backend/onboarding_questions.py`:
+
+```python
+"""Vocal onboarding question bank — ~15 high-signal questions from the Alan Precision questionnaire.
+
+Each entry is pure data. Adding or removing a question is a one-line change —
+no logic here, no side effects. The onboarding module iterates this list in order.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal
+
+FieldType = Literal["integer", "string", "enum", "boolean", "scale_1_10"]
+
+
+@dataclass(frozen=True)
+class OnboardingQuestion:
+    id: str
+    section: Literal["Baselines", "Context"]
+    text_fr: str
+    text_en: str
+    field: str
+    type: FieldType
+    extraction_hint: str
+    enum_values: tuple[str, ...] = ()
+
+
+QUESTIONS: tuple[OnboardingQuestion, ...] = (
+    OnboardingQuestion(
+        id="age",
+        section="Baselines",
+        text_fr="Quel age as-tu ?",
+        text_en="How old are you?",
+        field="age",
+        type="integer",
+        extraction_hint="Extract an integer age in years. If the user says '32 ans' return 32.",
+    ),
+    OnboardingQuestion(
+        id="sex",
+        section="Baselines",
+        text_fr="Quel est ton sexe ?",
+        text_en="What is your sex?",
+        field="sex",
+        type="enum",
+        enum_values=("male", "female", "other"),
+        extraction_hint="Return one of male, female, other.",
+    ),
+    OnboardingQuestion(
+        id="weight_kg",
+        section="Baselines",
+        text_fr="Quel est ton poids en kilos ?",
+        text_en="What is your weight in kilograms?",
+        field="weight_kg",
+        type="integer",
+        extraction_hint="Integer kilograms. Ignore units the user says.",
+    ),
+    OnboardingQuestion(
+        id="height_cm",
+        section="Baselines",
+        text_fr="Quelle est ta taille en centimetres ?",
+        text_en="What is your height in centimeters?",
+        field="height_cm",
+        type="integer",
+        extraction_hint="Integer centimeters. If user says '1m80' return 180.",
+    ),
+    OnboardingQuestion(
+        id="job",
+        section="Baselines",
+        text_fr="Quel est ton metier ?",
+        text_en="What is your job?",
+        field="job",
+        type="string",
+        extraction_hint="One short phrase describing the occupation.",
+    ),
+    OnboardingQuestion(
+        id="weekly_endurance_hours",
+        section="Baselines",
+        text_fr="Combien d'heures de sport d'endurance fais-tu par semaine ?",
+        text_en="How many hours of endurance training per week?",
+        field="weekly_endurance_hours",
+        type="integer",
+        extraction_hint="Integer hours per week. 0 if none.",
+    ),
+    OnboardingQuestion(
+        id="avg_sleep_hours",
+        section="Baselines",
+        text_fr="Combien d'heures dors-tu en moyenne par nuit ?",
+        text_en="On average, how many hours do you sleep per night?",
+        field="avg_sleep_hours",
+        type="integer",
+        extraction_hint="Integer hours. Round half-hours to nearest integer.",
+    ),
+    OnboardingQuestion(
+        id="sitting_hours_per_day",
+        section="Context",
+        text_fr="Combien d'heures passes-tu assis par jour ?",
+        text_en="How many hours per day do you spend sitting?",
+        field="sitting_hours_per_day",
+        type="integer",
+        extraction_hint="Integer hours sitting per day.",
+    ),
+    OnboardingQuestion(
+        id="smoker",
+        section="Context",
+        text_fr="Est-ce que tu fumes ?",
+        text_en="Do you smoke?",
+        field="smoker",
+        type="boolean",
+        extraction_hint="True if the user currently smokes, False otherwise.",
+    ),
+    OnboardingQuestion(
+        id="alcohol_frequency",
+        section="Context",
+        text_fr="A quelle frequence bois-tu de l'alcool ?",
+        text_en="How often do you drink alcohol?",
+        field="alcohol_frequency",
+        type="enum",
+        enum_values=("never", "rarely", "weekly", "several_per_week", "daily"),
+        extraction_hint="Map the answer to one of the enum values.",
+    ),
+    OnboardingQuestion(
+        id="sleep_satisfaction",
+        section="Context",
+        text_fr="Sur une echelle de 1 a 10, a quel point es-tu satisfait de ton sommeil ?",
+        text_en="On a scale of 1 to 10, how satisfied are you with your sleep?",
+        field="sleep_satisfaction",
+        type="scale_1_10",
+        extraction_hint="Integer 1-10. Clamp to that range.",
+    ),
+    OnboardingQuestion(
+        id="dominant_emotion_30d",
+        section="Context",
+        text_fr="Quelle emotion as-tu le plus ressentie ces 30 derniers jours ?",
+        text_en="What emotion have you felt most strongly in the past 30 days?",
+        field="dominant_emotion_30d",
+        type="string",
+        extraction_hint="One word or short phrase describing the emotion.",
+    ),
+    OnboardingQuestion(
+        id="work_mental_impact",
+        section="Context",
+        text_fr="Sur une echelle de 1 a 10, a quel point ton travail impacte-t-il ton bien-etre mental en ce moment ?",
+        text_en="On a scale of 1 to 10, how much is your work impacting your mental well-being?",
+        field="work_mental_impact",
+        type="scale_1_10",
+        extraction_hint="Integer 1-10. 1 = no impact, 10 = severe impact.",
+    ),
+    OnboardingQuestion(
+        id="family_cvd",
+        section="Context",
+        text_fr="Y a-t-il des antecedents de maladies cardiovasculaires dans ta famille proche ?",
+        text_en="Is there a family history of cardiovascular disease in your close relatives?",
+        field="family_cvd",
+        type="boolean",
+        extraction_hint="True if yes, False if no.",
+    ),
+    OnboardingQuestion(
+        id="current_medications",
+        section="Context",
+        text_fr="Prends-tu des medicaments actuellement ? Si oui, lesquels ?",
+        text_en="Are you currently taking any medications? If yes, which ones?",
+        field="current_medications",
+        type="string",
+        extraction_hint="List the medications as a comma-separated string, or 'none'.",
+    ),
+)
+```
+
+- [ ] **Step 11.2: Write failing tests for the onboarding module**
+
+Create `tests/test_onboarding.py`:
+
+```python
+"""Tests for backend.onboarding — session flow and memory seeding."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from backend import memory, onboarding
+from backend.onboarding_questions import QUESTIONS
+
+
+@pytest.fixture
+def tmp_memory(monkeypatch, tmp_path):
+    monkeypatch.setattr(memory, "MEMORY_DIR", tmp_path)
+    return tmp_path
+
+
+class TestOnboardingSession:
+    def test_start_session_returns_first_question(self, tmp_memory):
+        step = onboarding.start_session("demo-user")
+        assert step.index == 0
+        assert step.question.id == QUESTIONS[0].id
+        assert step.total == len(QUESTIONS)
+
+    def test_record_answer_advances_to_next_question(self, tmp_memory):
+        onboarding.start_session("demo-user")
+        step = onboarding.record_answer("demo-user", QUESTIONS[0].id, 32)
+        assert step.index == 1
+        assert step.question.id == QUESTIONS[1].id
+
+    def test_record_answer_rejects_wrong_question_id(self, tmp_memory):
+        onboarding.start_session("demo-user")
+        with pytest.raises(onboarding.OnboardingError):
+            onboarding.record_answer("demo-user", "not-the-current-question", "foo")
+
+    def test_finalize_writes_memory_file_with_baselines_and_context(self, tmp_memory):
+        onboarding.start_session("demo-user")
+        for q in QUESTIONS:
+            onboarding.record_answer(
+                "demo-user",
+                q.id,
+                _dummy_value_for(q.type),
+            )
+        onboarding.finalize("demo-user")
+        path = memory.MEMORY_DIR / "demo-user.md"
+        assert path.exists()
+        body = path.read_text()
+        assert "# Baselines" in body
+        assert "# Context" in body
+        assert "age" in body
+        assert "smoker" in body
+
+    def test_finalize_before_all_questions_answered_raises(self, tmp_memory):
+        onboarding.start_session("demo-user")
+        onboarding.record_answer("demo-user", QUESTIONS[0].id, 32)
+        with pytest.raises(onboarding.OnboardingError):
+            onboarding.finalize("demo-user")
+
+
+def _dummy_value_for(t):
+    return {
+        "integer": 5,
+        "scale_1_10": 5,
+        "string": "test",
+        "enum": "male",
+        "boolean": False,
+    }[t]
+```
+
+- [ ] **Step 11.3: Run tests to verify they fail**
+
+Run: `uv run pytest tests/test_onboarding.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'backend.onboarding'`.
+
+- [ ] **Step 11.4: Implement `backend/onboarding.py`**
+
+Create `backend/onboarding.py`:
+
+```python
+"""One-time vocal onboarding: asks the question bank in order, writes initial memory file.
+
+Session state is kept in a module-level dict keyed by user_id. This is fine for the
+hackathon (single-process demo). For production, back it with Redis or a real session store.
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Any
+
+from backend import memory
+from backend.onboarding_questions import QUESTIONS, OnboardingQuestion
+
+log = logging.getLogger(__name__)
+
+
+class OnboardingError(RuntimeError):
+    """Raised on invalid onboarding flow transitions."""
+
+
+@dataclass
+class OnboardingStep:
+    """What the frontend needs to render the current question."""
+
+    index: int
+    total: int
+    question: OnboardingQuestion
+    done: bool = False
+
+
+# user_id -> ordered dict of answered {question_id: raw_value}
+_SESSIONS: dict[str, dict[str, Any]] = {}
+
+
+def start_session(user_id: str) -> OnboardingStep:
+    """Begin onboarding for a user. Resets any in-flight session for that user."""
+    _SESSIONS[user_id] = {}
+    return _current_step(user_id)
+
+
+def record_answer(user_id: str, question_id: str, value: Any) -> OnboardingStep:
+    """Record an answer for the current question and advance to the next one."""
+    session = _SESSIONS.get(user_id)
+    if session is None:
+        raise OnboardingError(f"no active onboarding session for user_id={user_id}")
+    current = _current_question(session)
+    if current is None:
+        raise OnboardingError("onboarding already complete — call finalize()")
+    if question_id != current.id:
+        raise OnboardingError(
+            f"expected answer for {current.id!r}, got {question_id!r}"
+        )
+    session[question_id] = value
+    return _current_step(user_id)
+
+
+def finalize(user_id: str) -> None:
+    """Write the seeded memory file for this user. Raises if any answers are missing."""
+    session = _SESSIONS.get(user_id)
+    if session is None:
+        raise OnboardingError(f"no active onboarding session for user_id={user_id}")
+    missing = [q.id for q in QUESTIONS if q.id not in session]
+    if missing:
+        raise OnboardingError(f"cannot finalize, missing answers: {missing}")
+
+    baselines_entries: list[str] = []
+    context_entries: list[str] = []
+    for q in QUESTIONS:
+        entry = f"- {q.field}: {session[q.id]}"
+        if q.section == "Baselines":
+            baselines_entries.append(entry)
+        else:
+            context_entries.append(entry)
+
+    memory.ensure_file(user_id)
+    for entry in baselines_entries:
+        memory.append_entry(user_id, "Baselines", entry)
+    for entry in context_entries:
+        memory.append_entry(user_id, "Context", entry)
+
+    del _SESSIONS[user_id]
+    log.info("onboarding.finalized user_id=%s", user_id)
+
+
+def _current_question(session: dict[str, Any]) -> OnboardingQuestion | None:
+    for q in QUESTIONS:
+        if q.id not in session:
+            return q
+    return None
+
+
+def _current_step(user_id: str) -> OnboardingStep:
+    session = _SESSIONS[user_id]
+    current = _current_question(session)
+    if current is None:
+        # Use the final question as a placeholder so `question` stays populated.
+        return OnboardingStep(
+            index=len(QUESTIONS),
+            total=len(QUESTIONS),
+            question=QUESTIONS[-1],
+            done=True,
+        )
+    return OnboardingStep(
+        index=len(session),
+        total=len(QUESTIONS),
+        question=current,
+        done=False,
+    )
+```
+
+Note: `memory.ensure_file()` and `memory.append_entry()` come from Task 1. Confirm those names exist in `backend/memory.py` — if Task 1 named them differently (e.g. `append_event`, `write_section`), adjust the calls above to match.
+
+- [ ] **Step 11.5: Run tests to verify they pass**
+
+Run: `uv run pytest tests/test_onboarding.py -v`
+Expected: 5/5 PASS.
+
+- [ ] **Step 11.6: Add the three onboarding endpoints to `health_server.py`**
+
+Add to `backend/health_server.py`:
+
+```python
+from backend import onboarding as onboarding_module
+
+
+class OnboardingAnswerPayload(BaseModel):
+    question_id: str
+    value: Any  # string / int / bool depending on question type
+
+
+@app.post("/api/onboarding/start/{patient_id}")
+async def onboarding_start(patient_id: str) -> dict:
+    patient = _resolve_patient(patient_id)
+    step = onboarding_module.start_session(patient.token)
+    return _step_to_payload(step)
+
+
+@app.post("/api/onboarding/answer/{patient_id}")
+async def onboarding_answer(patient_id: str, payload: OnboardingAnswerPayload) -> dict:
+    patient = _resolve_patient(patient_id)
+    try:
+        step = onboarding_module.record_answer(
+            patient.token, payload.question_id, payload.value
+        )
+    except onboarding_module.OnboardingError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    return _step_to_payload(step)
+
+
+@app.post("/api/onboarding/finalize/{patient_id}")
+async def onboarding_finalize(patient_id: str) -> dict:
+    patient = _resolve_patient(patient_id)
+    try:
+        onboarding_module.finalize(patient.token)
+    except onboarding_module.OnboardingError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    return {"ok": True, "memory_file": f"data/memory/{patient.token}.md"}
+
+
+def _step_to_payload(step: onboarding_module.OnboardingStep) -> dict:
+    q = step.question
+    return {
+        "index": step.index,
+        "total": step.total,
+        "done": step.done,
+        "question": {
+            "id": q.id,
+            "section": q.section,
+            "text_fr": q.text_fr,
+            "text_en": q.text_en,
+            "field": q.field,
+            "type": q.type,
+            "enum_values": list(q.enum_values),
+        },
+    }
+```
+
+Note: we intentionally keep the first cut **text-based** (`POST /api/onboarding/answer` accepts a typed value in the JSON body, not an audio blob). The frontend can start integrating immediately with typed answers, and Voxtral STT + Mistral extraction are added in Step 11.7 as a second endpoint without breaking the text path.
+
+- [ ] **Step 11.7: Add the audio endpoint (Voxtral STT + Mistral extraction)**
+
+Add to `backend/health_server.py`:
+
+```python
+from backend.voxtral import transcribe_audio
+from backend.brain import extract_onboarding_value  # implemented below
+
+
+@app.post("/api/onboarding/audio/{patient_id}")
+async def onboarding_audio(patient_id: str, audio: UploadFile) -> dict:
+    patient = _resolve_patient(patient_id)
+    audio_bytes = await audio.read()
+    transcript = await transcribe_audio(audio_bytes)
+    step = onboarding_module._current_step(patient.token)
+    if step.done:
+        raise HTTPException(status_code=400, detail="onboarding already complete")
+    value = await extract_onboarding_value(step.question, transcript)
+    next_step = onboarding_module.record_answer(
+        patient.token, step.question.id, value
+    )
+    return {
+        "transcript": transcript,
+        "extracted": value,
+        "field": step.question.field,
+        "next": _step_to_payload(next_step),
+    }
+```
+
+Then add to `backend/brain.py`:
+
+```python
+async def extract_onboarding_value(
+    question: "OnboardingQuestion",
+    transcript: str,
+) -> Any:
+    """Use Mistral Small to pull a typed value out of an onboarding transcript."""
+    prompt = (
+        f"The user was asked: {question.text_en}\n"
+        f"They said: {transcript!r}\n"
+        f"Extraction rule: {question.extraction_hint}\n"
+        f"Expected type: {question.type}\n"
+    )
+    if question.type == "enum":
+        prompt += f"Valid values: {list(question.enum_values)}\n"
+    prompt += "Return only the extracted value, nothing else."
+
+    response = _mistral_client.chat.complete(
+        model=LLM_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = response.choices[0].message.content.strip()
+    return _coerce_onboarding_value(raw, question.type)
+
+
+def _coerce_onboarding_value(raw: str, field_type: str) -> Any:
+    if field_type in ("integer", "scale_1_10"):
+        return int("".join(c for c in raw if c.isdigit() or c == "-") or 0)
+    if field_type == "boolean":
+        return raw.lower() in ("true", "yes", "oui", "y", "1")
+    return raw.strip().strip("\"'")
+```
+
+- [ ] **Step 11.8: Create the demo seed file**
+
+Create `data/seeds/pierre_onboarding.json`:
+
+```json
+{
+  "age": 34,
+  "sex": "male",
+  "weight_kg": 78,
+  "height_cm": 182,
+  "job": "product manager",
+  "weekly_endurance_hours": 4,
+  "avg_sleep_hours": 6,
+  "sitting_hours_per_day": 9,
+  "smoker": false,
+  "alcohol_frequency": "weekly",
+  "sleep_satisfaction": 5,
+  "dominant_emotion_30d": "frustration",
+  "work_mental_impact": 8,
+  "family_cvd": true,
+  "current_medications": "none"
+}
+```
+
+- [ ] **Step 11.9: Add a `POST /dev/onboarding/seed/{patient_id}` endpoint**
+
+For the demo, the presenter can skip to seeded answers after N live questions. Add to `health_server.py`:
+
+```python
+import json as _json
+from pathlib import Path as _Path
+
+
+@app.post("/dev/onboarding/seed/{patient_id}")
+async def dev_onboarding_seed(patient_id: str, seed_file: str = "pierre_onboarding.json") -> dict:
+    """Fill remaining onboarding answers from a seed JSON, then finalize. Dev-only."""
+    patient = _resolve_patient(patient_id)
+    seed_path = _Path("data/seeds") / seed_file
+    if not seed_path.exists():
+        raise HTTPException(status_code=404, detail=f"seed file not found: {seed_path}")
+    seed = _json.loads(seed_path.read_text())
+    # Ensure a session exists (start if needed)
+    if patient.token not in onboarding_module._SESSIONS:
+        onboarding_module.start_session(patient.token)
+    session = onboarding_module._SESSIONS[patient.token]
+    for q in onboarding_module.QUESTIONS:
+        if q.id not in session and q.field in seed:
+            session[q.id] = seed[q.field]
+    onboarding_module.finalize(patient.token)
+    return {"ok": True, "seeded_from": str(seed_path)}
+```
+
+- [ ] **Step 11.10: Smoke test end-to-end**
+
+```bash
+uv run vital-server &
+sleep 2
+curl -X POST http://localhost:8420/api/onboarding/start/patient-1
+curl -X POST http://localhost:8420/api/onboarding/answer/patient-1 \
+  -H "Content-Type: application/json" \
+  -d '{"question_id":"age","value":34}'
+curl -X POST http://localhost:8420/dev/onboarding/seed/patient-1
+curl -s http://localhost:8420/docs | head -5  # Swagger UI reachable
+```
+
+Expected: the first call returns the first question, the answer call advances to the second question, the seed call finalizes and writes `data/memory/2bfaa7e6f9455ceafa0a59fd5b80496c.md` with Baselines + Context sections.
+
+- [ ] **Step 11.11: Doc sync for onboarding**
+
+1. `CLAUDE.md`: project layout — add `onboarding.py` and `onboarding_questions.py`. Commit scopes table — add `onboarding | onboarding.py, question bank, memory seeder`.
+2. `docs/ARCHITECTURE.md`: endpoints list — add `POST /api/onboarding/start/{patient_id}`, `POST /api/onboarding/answer/{patient_id}`, `POST /api/onboarding/audio/{patient_id}`, `POST /api/onboarding/finalize/{patient_id}`, `POST /dev/onboarding/seed/{patient_id}`. Surfaces list — mention Surface 0 (vocal onboarding).
+3. `.vibe/CONTEXT.md`: architecture summary — mention the 4 surfaces including onboarding.
+4. `HANDOFF.md` (gitignored but share with team out-of-band): demo script — add the onboarding beat ("3-5 live questions, seed the rest, cut to morning brief"). API contract — add the onboarding endpoints.
+
+- [ ] **Step 11.12: Run full test suite + lint**
+
+```bash
+uv run pytest -v
+uv run ruff check backend/
+```
+Expected: all green.
+
+- [ ] **Step 11.13: Commit**
+
+```bash
+git add backend/onboarding.py backend/onboarding_questions.py \
+        backend/health_server.py backend/brain.py \
+        tests/test_onboarding.py data/seeds/pierre_onboarding.json \
+        CLAUDE.md docs/ARCHITECTURE.md .vibe/CONTEXT.md
+git commit -m "feat(onboarding): vocal onboarding flow + question bank + memory seeder
+
+Adds Surface 0 — one-time voice-based onboarding. Fifteen high-signal
+questions derived from the Alan Precision questionnaire drive the flow;
+each answer is recorded via text, typed JSON, or Voxtral STT + Mistral
+extraction. On completion, the module writes a seeded memory file with
+Baselines + Context sections so the morning brief can immediately
+reference what the user just said out loud. Includes a dev seed
+endpoint so the demo can skip to pre-filled answers after a few live
+questions."
+```
+
+---
+
 ## Done — acceptance checklist
 
 Before declaring the backend ready for the frontend team and the stage rehearsal, verify:
@@ -2871,3 +3489,5 @@ Before declaring the backend ready for the frontend team and the stage rehearsal
 - [ ] `GET /api/notifications/stream` receives the notification from the previous step via SSE
 - [ ] `grep -r "berries\|weekly.checkup" backend/` returns zero matches
 - [ ] `grep -r "8.tool\|8 outils" backend/ CLAUDE.md docs/ARCHITECTURE.md .vibe/CONTEXT.md .claude/rules/backend.md` returns zero matches
+- [ ] `POST /api/onboarding/start/patient-1` returns the first question
+- [ ] `POST /dev/onboarding/seed/patient-1` finalizes and writes the memory file in one call

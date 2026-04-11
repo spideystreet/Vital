@@ -7,3 +7,6 @@ max_turns = 15
 skill_paths = [
     ".vibe/skills",
 ]
+prompt_paths = [
+    ".vibe/prompts",
+]

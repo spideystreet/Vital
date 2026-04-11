@@ -83,7 +83,7 @@ class TestPatientsEndpoint:
         response = api_client.get("/api/patients")
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 3
+        assert len(data) == 1
         assert all("id" in p and "name" in p for p in data)
 
     def test_patient_ids_unique(self, api_client):

@@ -30,7 +30,29 @@ The differentiator vs existing dashboard apps (Bevel, Whoop, Oura) is **persiste
 
 ## Product surfaces
 
-The pivoted product has exactly **three user-facing surfaces**, all powered by one shared brain + memory:
+The pivoted product has exactly **four user-facing surfaces**, all powered by one shared brain + memory:
+
+### Surface 0 — Vocal onboarding (one-time, first-use)
+
+**Why it exists:** Alan Precision's current onboarding is a ~150-question form. V.I.T.A.L's differentiator is a voice-first experience, so the first time a user opens the app we collect their profile by talking with them instead of presenting a wall of inputs. This doubles as a deeper Voxtral integration (partner score) and seeds the memory spine with the exact context Alan already asks members for.
+
+**Trigger:** first app open for a patient whose memory file is empty. The frontend checks memory state on load and routes to onboarding if empty; otherwise it goes straight to the dashboard.
+
+**Flow:**
+1. Backend reads the question bank (~15 high-signal questions from the Alan Precision questionnaire — age, sex, weight, height, job, weekly endurance hours, average sleep duration, sitting hours/day, smoking, alcohol frequency, sleep satisfaction 1-10, dominant emotion past 30d, work mental impact 1-10, family CVD y/n, current medications)
+2. Backend TTS-streams the first question via Voxtral; frontend plays it and shows the current question text + progress (e.g. `3/15`)
+3. User speaks the answer; frontend uploads the audio chunk
+4. Backend runs Voxtral STT → transcript, then calls Mistral Small with a structured extraction prompt to pull the typed field value (integer, string, enum) from the transcript
+5. Backend SSE-emits `{transcript, extracted, next_question}` + streams the next TTS audio
+6. On the last question, backend writes `data/memory/<endUserId>.md` with pre-filled **Baselines** + **Context** sections derived from the extracted answers, then SSE `done` with a redirect hint to the dashboard
+
+**Demo beat:** on stage, the presenter answers **3-5 live questions** (mic on, fields pop into the UI as they're extracted — visible proof Mistral + Voxtral are working together). The remaining ~10 questions are pre-seeded from `data/seeds/pierre_onboarding.json` so the demo stays under ~90 seconds. Immediately after onboarding ends, the morning brief references what the user just said out loud — the single strongest moment in the pitch.
+
+**Scope discipline:** the onboarding question bank is data, not code. It lives in `backend/onboarding_questions.py` (or a JSON file) as a list of `{id, text_fr, text_en, field, type, extraction_hint}` dicts. Adding or removing questions is a one-line data change, not a code change.
+
+**Error handling:** if Voxtral STT fails mid-flow, the frontend falls back to a text input for that one question; the rest of the flow continues by voice. If Mistral extraction returns an unparseable value, the backend re-asks the same question once; on second failure, stores the raw transcript as-is under Context.
+
+### Surface 1 — Morning brief (proactive, ritual)
 
 ### Surface 1 — Morning brief (proactive, ritual)
 
@@ -126,6 +148,18 @@ read_all(user_id) -> str                 # for LLM injection
 compute_baseline(user_id, metric, days)  # reads biometrics, writes baseline section
 ```
 
+### `backend/onboarding.py` (~120 lines) + `backend/onboarding_questions.py` (~80 lines of data)
+
+Drives the one-time vocal onboarding flow. Owns a tiny session state (which question index the user is on), runs each turn through Voxtral STT → Mistral structured extraction → next question TTS, and on completion writes the initial `data/memory/<endUserId>.md` with Baselines + Context sections. No persistence beyond the memory file itself; the in-flight session is kept in memory for the duration of the call.
+
+```
+async def start_session(user_id) -> OnboardingSession
+async def answer_current(user_id, audio_bytes) -> OnboardingStep  # STT + extract + next question
+async def finalize(user_id) -> None                                # write memory file
+```
+
+The question bank (`onboarding_questions.py`) is a flat list of dicts keeping the question bank as data, not code. Adding a question is a one-line change.
+
 ### `backend/coach.py` (~180 lines)
 
 Orchestrates the morning brief and the dashboard insights — both are memory-grounded LLM generations, so they share a module.
@@ -157,6 +191,7 @@ Because `award_berries` is cut along with `berries.py` (see "What gets cut"), th
 
 ## New frontend views (owned by frontend team, in parallel)
 
+0. **Vocal onboarding view (first-open only)** — full-screen mic button + current question text (FR/EN toggle) + `3/15` progress dots. On each question: plays TTS, records reply, displays transcript + extracted field as a toast, advances to next. At the end, redirects to the dashboard.
 1. **Stats dashboard (landing view)** — grid of Thryve stat cards, each showing value, unit, delta vs baseline, and the LLM insight phrase. Fetches `GET /api/dashboard/{patient_id}` on load. Tap a stat → opens the chat view with a pre-filled first message about that stat.
 2. **Morning brief card** — triggered by "Start my day" button. Plays audio via streaming TTS, shows diagnosis + protocol + memory callback as text. Captures voice reply.
 3. **Chat view** — textbox + mic button, streams responses via SSE. Reuses the existing streaming pattern in `health_server.py`.
