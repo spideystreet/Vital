@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="public/mockups/apple-watch-ultra.png" alt="V.I.T.A.L" width="120">
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://mistral.ai"><img src="public/mockups/alanxmistral.png" alt="Alan x Mistral" width="120"></a>
+  <img src="public/mockups/img1alan.png" alt="V.I.T.A.L" width="47%">
+  &nbsp;
+  <img src="public/mockups/Alan_image1.png" alt="V.I.T.A.L x Alan" width="47%">
 </p>
 
 <h1 align="center">V.I.T.A.L</h1>
@@ -20,8 +20,6 @@
 
 <p align="center">
   <a href="https://mistral.ai"><img src="public/badges/m-orange.svg" alt="Mistral AI" height="32"></a>
-  &nbsp;&nbsp;
-  <a href="https://luma.com/t7rspaka"><img src="public/mockups/alanxmistral.png" alt="Alan × Mistral Hackathon" height="32"></a>
 </p>
 
 ---
@@ -37,10 +35,6 @@
 Burnout drains **€120B/year** from French companies. 36% of long-term sick leave is stress-related. Every health app shows you a dashboard. **None of them know you.**
 
 V.I.T.A.L reads your wearable, learns *your* baselines, and pushes adaptive protocols **before** problems become doctor visits.
-
-<p align="center">
-  <img src="public/mockups/img1alan.png" alt="V.I.T.A.L demo" width="100%">
-</p>
 
 ## What it does
 
@@ -64,10 +58,6 @@ V.I.T.A.L reads your wearable, learns *your* baselines, and pushes adaptive prot
                               zone-2 + magnesium fixed it in 4 days."
 ```
 
-<p align="center">
-  <img src="public/mockups/Alan_image1.png" alt="V.I.T.A.L x Alan" width="100%">
-</p>
-
 ## Powered by
 
 <table>
@@ -89,3 +79,9 @@ Zero personal identifiers sent to the LLM — only anonymous aggregated metrics.
 ## License
 
 MIT
+
+---
+
+<p align="center">
+  <a href="https://luma.com/t7rspaka"><img src="public/mockups/alanxmistral.png" alt="Alan × Mistral AI Health Hack" width="180"></a>
+</p>
