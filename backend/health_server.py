@@ -192,6 +192,7 @@ class StartCheckupResponse(BaseModel):
 class RespondRequest(BaseModel):
     session_id: str
     transcript: str
+    no_tts: bool = False
 
 
 class HealthPayload(BaseModel):
@@ -365,25 +366,24 @@ async def checkup_respond(req: RespondRequest):
         if chunk.strip():
             yield sse_event("text", {"chunk": chunk})
 
-        # Step f: stream audio (TTS)
-        try:
-            def _generate_audio():
-                """Generate TTS audio chunks from final text."""
-                # Use stream_voice_events with a single-item text iterator
-                def _text_iter():
-                    yield final_text
-                for kind, payload in stream_voice_events(
-                    _text_iter(), voice_id=DEMO_ASSISTANT_VOICE
-                ):
-                    if kind == "audio":
-                        yield payload
+        # Step f: stream audio (TTS) — skipped when no_tts=true (e.g. mobile client)
+        if not req.no_tts:
+            try:
+                def _generate_audio():
+                    def _text_iter():
+                        yield final_text
+                    for kind, payload in stream_voice_events(
+                        _text_iter(), voice_id=DEMO_ASSISTANT_VOICE
+                    ):
+                        if kind == "audio":
+                            yield payload
 
-            audio_chunks = await loop.run_in_executor(None, lambda: list(_generate_audio()))
-            for chunk_bytes in audio_chunks:
-                b64 = base64.b64encode(chunk_bytes).decode("ascii")
-                yield sse_event("audio", {"base64_pcm_chunk": b64})
-        except Exception:
-            logger.exception("TTS streaming failed")
+                audio_chunks = await loop.run_in_executor(None, lambda: list(_generate_audio()))
+                for chunk_bytes in audio_chunks:
+                    b64 = base64.b64encode(chunk_bytes).decode("ascii")
+                    yield sse_event("audio", {"base64_pcm_chunk": b64})
+            except Exception:
+                logger.exception("TTS streaming failed")
 
         # Step g: burnout score
         if burnout_result:
