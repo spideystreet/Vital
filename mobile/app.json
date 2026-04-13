@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "vital",
+    "slug": "vital",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -34,7 +34,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "VITAL a besoin de votre micro pour le checkup vocal."
+          "microphonePermission": "Vital a besoin de votre micro pour le checkup vocal."
         }
       ]
     ]
