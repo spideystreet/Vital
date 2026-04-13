@@ -1,8 +1,7 @@
 <h1 align="center">Vital</h1>
 
 <p align="center">
-  <strong>Voice-Integrated Tracker & Adaptive Listener</strong><br>
-  <em>The first proactive health coach that actually remembers you.</em>
+  <em>Finally, your health data works for you.</em>
 </p>
 
 <p align="center">

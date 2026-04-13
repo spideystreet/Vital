@@ -1,0 +1,30 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Vital",
+  "colors": {
+    "primary": "#6C5CE7",
+    "light": "#A29BFE",
+    "dark": "#5A4BD1"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting Started",
+        "pages": [
+          "introduction"
+        ]
+      }
+    ]
+  },
+  "logo": {
+    "light": "/logo/vital-light.svg",
+    "dark": "/logo/vital-dark.svg"
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/spideystreet/Vital"
+    }
+  }
+}
