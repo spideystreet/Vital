@@ -42,24 +42,9 @@ HANDOFF.md
 # ── Wiki ────────────────────────────────────────────────
 wiki/.obsidian/
 
-# ── Public assets (legacy rules, kept as-is) ───────────
+# ── Public assets ────────────────────────────────────────
 public/*
 !public/mockups/
-public/mockups/*
-!public/mockups/apple-watch-ultra.png
-!public/mockups/alanxmistral.png
-!public/mockups/demo-screenshot-3.png
-!public/mockups/alan_X.png
-!public/mockups/img1alan.png
-!public/mockups/Alan_image1.png
 !public/badges/
-public/badges/*
-!public/badges/separator.svg
-!public/badges/m-orange.svg
-!public/badges/apple-health-en.svg
 !public/models/
-public/models/*
-!public/models/mistral-small.png
-!public/models/voxtral.png
-!public/models/devstral.png
 concepts/
