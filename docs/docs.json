@@ -25,8 +25,8 @@
     ]
   },
   "logo": {
-    "light": "/logo/vital-light.svg",
-    "dark": "/logo/vital-dark.svg"
+    "light": "/vital-logo.png",
+    "dark": "/vital-logo.png"
   },
   "footer": {
     "socials": {
