@@ -6,14 +6,36 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D920C2D72F8E9190005F0541 /* Networking in Frameworks */ = {isa = PBXBuildFile; productRef = D920C2D62F8E9190005F0541 /* Networking */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		D920C1FD2F8D5E90005F0541 /* Vital.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vital.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D920C2522F8E90F5005F0541 /* Exceptions for "Modules" folder in "Vital" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Networking,
+			);
+			target = D920C1FC2F8D5E90005F0541 /* Vital */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D920C1FF2F8D5E90005F0541 /* Vital */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Vital;
+			sourceTree = "<group>";
+		};
+		D920C2502F8E90CD005F0541 /* Modules */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D920C2522F8E90F5005F0541 /* Exceptions for "Modules" folder in "Vital" target */,
+			);
+			path = Modules;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -23,6 +45,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D920C2D72F8E9190005F0541 /* Networking in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -33,6 +56,8 @@
 			isa = PBXGroup;
 			children = (
 				D920C1FF2F8D5E90005F0541 /* Vital */,
+				D920C2502F8E90CD005F0541 /* Modules */,
+				D920C2D52F8E9190005F0541 /* Frameworks */,
 				D920C1FE2F8D5E90005F0541 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -43,6 +68,13 @@
 				D920C1FD2F8D5E90005F0541 /* Vital.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		D920C2D52F8E9190005F0541 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -63,9 +95,11 @@
 			);
 			fileSystemSynchronizedGroups = (
 				D920C1FF2F8D5E90005F0541 /* Vital */,
+				D920C2502F8E90CD005F0541 /* Modules */,
 			);
 			name = Vital;
 			packageProductDependencies = (
+				D920C2D62F8E9190005F0541 /* Networking */,
 			);
 			productName = Vital;
 			productReference = D920C1FD2F8D5E90005F0541 /* Vital.app */;
@@ -377,6 +411,13 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D920C2D62F8E9190005F0541 /* Networking */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Networking;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D920C1F52F8D5E90005F0541 /* Project object */;
 }

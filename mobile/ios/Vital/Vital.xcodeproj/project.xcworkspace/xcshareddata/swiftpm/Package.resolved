@@ -1,0 +1,15 @@
+{
+  "originHash" : "1567cd12ca78c26e811d4d5177a712be401f230fb6a2c39bad82fe132b50dfe4",
+  "pins" : [
+    {
+      "identity" : "networkkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/theosementa/NetworkKit",
+      "state" : {
+        "branch" : "1.0.4",
+        "revision" : "f98d20dece24fc0978c5051fe83a7657117f67fc"
+      }
+    }
+  ],
+  "version" : 3
+}
