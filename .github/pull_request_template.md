@@ -10,3 +10,12 @@
 
 <!-- How was this tested? -->
 - [ ] ...
+
+## Checklist
+
+- [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/) and are atomic
+- [ ] Code and comments are in English
+- [ ] No secrets or credentials committed (`.env`, API keys, tokens)
+- [ ] Lint passes (`swiftlint` for iOS, Android lint, Mintlify build if `docs/` touched)
+- [ ] No medical diagnosis / clinical-advice language in UX copy
+- [ ] HealthKit remains the only health data source (no aggregators)
