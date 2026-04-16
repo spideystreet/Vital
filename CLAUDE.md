@@ -2,8 +2,8 @@
 
 > Finally, your health data works for you.
 
-Core mobile repo — iOS (SwiftUI) + Android live here.  
-Backend, analytics, and internal specs are separate repos.
+Core mobile repo — iOS (SwiftUI) app lives here.  
+AI, analytics, and internal specs are separate repos.
 
 ## Project structure
 
@@ -15,7 +15,7 @@ docs/              # Mintlify product landing site
 public/            # Static assets (badges, mockups, model logos)
 ```
 
-## Related repos (siblings under `Vital/`)
+## Related repos (siblings under `Vital Vie` organization)
 
 | Repo | Purpose |
 |------|---------|
